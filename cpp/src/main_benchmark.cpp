@@ -21,7 +21,7 @@ FastGBDTEnsemble create_benchmark_tree_ensemble(int n_trees = 50, int depth = 6)
     std::uniform_real_distribution<float> dist_val(-0.05f, 0.05f);
     std::uniform_int_distribution<int32_t> dist_feat(0, 15);
 
-    auto build_tree = [&](int current_depth, int max_d) -> DecisionTree {
+    auto build_tree = [&](int max_d) -> DecisionTree {
         DecisionTree tree;
         int n_nodes = (1 << (max_d + 1)) - 1;
         tree.nodes.resize(n_nodes);
@@ -42,14 +42,16 @@ FastGBDTEnsemble create_benchmark_tree_ensemble(int n_trees = 50, int depth = 6)
     };
 
     for (int i = 0; i < n_trees; ++i) {
-        ensemble.trees_flat.push_back(build_tree(0, depth));
-        ensemble.trees_up.push_back(build_tree(0, depth));
-        ensemble.trees_down.push_back(build_tree(0, depth));
+        ensemble.trees_flat.push_back(build_tree(depth));
+        ensemble.trees_up.push_back(build_tree(depth));
+        ensemble.trees_down.push_back(build_tree(depth));
     }
     return ensemble;
 }
 
 int main(int argc, char* argv[]) {
+    (void)argc;
+    (void)argv;
     std::cout << "========================================================\n";
     std::cout << "   HIGH-FREQUENCY LOB LOW-LATENCY C++ BENCHMARK ENGINE   \n";
     std::cout << "========================================================\n\n";

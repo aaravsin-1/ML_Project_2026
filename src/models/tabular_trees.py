@@ -1,5 +1,6 @@
 """Tier 2 (Random Forest) and Tier 3 (LightGBM) Tabular Microstructure Models."""
 
+import warnings
 from typing import Dict, List, Optional, Tuple
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
@@ -32,10 +33,14 @@ class RandomForestLOB:
         self.model.fit(X, y)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict(X)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            return self.model.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(X)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            return self.model.predict_proba(X)
 
     @property
     def feature_importances_(self) -> np.ndarray:
@@ -88,10 +93,14 @@ class LightGBMLOB:
         )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict(X)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            return self.model.predict(X)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(X)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=UserWarning)
+            return self.model.predict_proba(X)
 
     @property
     def feature_importances_(self) -> np.ndarray:
