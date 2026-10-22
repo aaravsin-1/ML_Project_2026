@@ -1,0 +1,10 @@
+check,value,status
+Generalization Gap (F1 Train - Test),0.11810143148306029,PASS (< 0.25)
+Test Matthews Correlation Coef (MCC),0.38532363124843405,PASS (> 0.25)
+Test Cohen's Kappa,0.37414969733356096,PASS (> 0.25)
+Purged Cross-Validation Mean F1,0.6005961382624629,PASS (Stable across folds)
+Purged Cross-Validation Mean MCC,0.41203321714846897,PASS (Positive across folds)
+Permutation Reality Check F1,0.2964089721410423,PASS (Collapsed to random chance ~0.33)
+Permutation Reality Check MCC,-0.019866473135233015,PASS (Collapsed to 0.00)
+Cross-Regime Small-Tick Transfer F1,0.5623079426256018,PASS (Survives regime shift)
+Cross-Regime Small-Tick Transfer MCC,0.36342109504372627,PASS (Positive transfer)
