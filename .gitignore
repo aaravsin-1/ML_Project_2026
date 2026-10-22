@@ -1,0 +1,30 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C++ binaries
+*.exe
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+cpp/build/
+
+# Package / distribution
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# PyTest & IDE
+.pytest_cache/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary weights
+weights/*.pt
+weights/*.pth
