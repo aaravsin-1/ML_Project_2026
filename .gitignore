@@ -30,5 +30,5 @@ weights/*.pt
 weights/*.pth
 
 # Raw and generated datasets (downloaded from Kaggle, not redistributed)
-data/
-logs/
+/data/
+/logs/
