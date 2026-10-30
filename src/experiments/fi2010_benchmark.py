@@ -53,9 +53,24 @@ def scores(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float]:
     }
 
 
-def run_fi2010_benchmark(horizons: List[int], epochs: int, seed: int = 0) -> pd.DataFrame:
-    torch.manual_seed(seed)
-    np.random.seed(seed)
+HISTORY_LAGS = (1, 5, 10, 20, 50, 100)
+
+
+def history_features(lob: np.ndarray) -> np.ndarray:
+    """Changes of the 40 raw LOB columns over the last 1..100 rows (strictly past).
+
+    DeepLOB sees a 100-row window; this gives the tabular models comparable history so the
+    comparison is about architecture, not about which model was allowed to see the past.
+    """
+    out = []
+    for lag in HISTORY_LAGS:
+        d = np.zeros_like(lob)
+        d[lag:] = lob[lag:] - lob[:-lag]
+        out.append(d)
+    return np.concatenate(out, axis=1).astype(np.float32)
+
+
+def run_fi2010_benchmark(horizons: List[int], epochs: int, seeds: List[int] = (0,)) -> pd.DataFrame:
     train_lob, train_extra, train_y, test_lob, test_extra, test_y = load_setup2()
     n_tr = len(train_lob)
     print(f"[+] FI-2010 Setup 2: {n_tr:,} training rows (days 1-7), {len(test_lob):,} test rows (days 8-10)")
@@ -65,62 +80,92 @@ def run_fi2010_benchmark(horizons: List[int], epochs: int, seed: int = 0) -> pd.
     all_lob = np.concatenate([train_lob, test_lob])
     all_extra = np.concatenate([train_extra, test_extra])
     tab = np.concatenate([all_lob, all_extra], axis=1)  # 144 features
+    tab_hist = np.concatenate([tab, history_features(all_lob)], axis=1)  # + 240 history features
 
     out_dir = ARTIFACTS_DIR / "fi2010"
     out_dir.mkdir(exist_ok=True)
     all_rows = []
-    for k in horizons:
-        # Per-horizon checkpoint so an interrupted run resumes at the next horizon
-        ckpt = out_dir / f"setup2_k{k}_e{epochs}.csv"
-        if ckpt.exists():
-            print(f"[+] k={k}: loading checkpoint {ckpt.name}")
-            all_rows.extend(pd.read_csv(ckpt).to_dict("records"))
-            continue
-        rows = []
-        y_all = np.concatenate([train_y[k], test_y[k]])
-        val_start = int(n_tr * 0.8)
-        idx = {
-            "train": np.arange(SEQ_LEN - 1, val_start - k),
-            "val": np.arange(val_start, n_tr - k),
-            "test": np.arange(n_tr, len(y_all)),
-        }
-        y_test = y_all[idx["test"]]
-        dist = np.bincount(y_test, minlength=3) / len(y_test)
-        print(f"\n[+] k={k}: test class shares FLAT/UP/DOWN = {np.round(dist, 3)}")
+    for seed in seeds:
+        for k in horizons:
+            y_all = np.concatenate([train_y[k], test_y[k]])
+            val_start = int(n_tr * 0.8)
+            idx = {
+                "train": np.arange(SEQ_LEN - 1, val_start - k),
+                "val": np.arange(val_start, n_tr - k),
+                "test": np.arange(n_tr, len(y_all)),
+            }
+            y_test = y_all[idx["test"]]
 
-        def add(name: str, preds: np.ndarray):
-            s = scores(y_test, preds)
-            rows.append({"horizon_k": k, "model": name, **s})
-            print(f"    {name:<22} acc {s['accuracy']:.4f} | weighted-F1 {s['weighted_f1']:.4f} | macro-F1 {s['macro_f1']:.4f}")
+            def add(rows, name: str, preds: np.ndarray):
+                s = scores(y_test, preds)
+                rows.append({"seed": seed, "horizon_k": k, "model": name, **s})
+                print(f"    seed {seed} k={k} {name:<32} acc {s['accuracy']:.4f} | weighted-F1 {s['weighted_f1']:.4f} | macro-F1 {s['macro_f1']:.4f}")
 
-        add("Naive Flat", np.zeros(len(y_test), dtype=np.int64))
-        add("Naive Momentum (lag k)", NaiveMomentumBaseline(k).predict(y_all, idx["test"]))
+            # Checkpoint 1: original model set (seed 0 keeps its original file name)
+            suffix = "" if seed == 0 else f"_s{seed}"
+            ckpt = out_dir / f"setup2_k{k}_e{epochs}{suffix}.csv"
+            if ckpt.exists():
+                print(f"[+] seed {seed} k={k}: loading checkpoint {ckpt.name}")
+                prev = pd.read_csv(ckpt)
+                prev["seed"] = seed
+                all_rows.extend(prev.to_dict("records"))
+            else:
+                torch.manual_seed(seed)
+                np.random.seed(seed)
+                rows = []
+                print(f"\n[+] seed {seed} k={k}: test class shares FLAT/UP/DOWN = {np.round(np.bincount(y_test, minlength=3) / len(y_test), 3)}")
+                add(rows, "Naive Flat", np.zeros(len(y_test), dtype=np.int64))
+                add(rows, "Naive Momentum (lag k)", NaiveMomentumBaseline(k).predict(y_all, idx["test"]))
 
-        lr = LogisticRegressionBaseline(C=1.0)
-        lr.model.set_params(class_weight=None)
-        lr.fit(tab[idx["train"]], y_all[idx["train"]])
-        add("Logistic Regression", lr.predict(tab[idx["test"]]))
+                lr = LogisticRegressionBaseline(C=1.0)
+                lr.model.set_params(class_weight=None)
+                lr.fit(tab[idx["train"]], y_all[idx["train"]])
+                add(rows, "Logistic Regression", lr.predict(tab[idx["test"]]))
 
-        lgb_model = LightGBMLOB(num_leaves=63, max_depth=8, learning_rate=0.05, n_estimators=500,
-                                random_state=seed, class_weight=None)
-        lgb_model.fit(tab[idx["train"]], y_all[idx["train"]], tab[idx["val"]], y_all[idx["val"]], early_stopping_rounds=30)
-        add("LightGBM (144 feats)", lgb_model.predict(tab[idx["test"]]))
+                lgb_model = LightGBMLOB(num_leaves=63, max_depth=8, learning_rate=0.05, n_estimators=500,
+                                        random_state=seed, class_weight=None)
+                lgb_model.fit(tab[idx["train"]], y_all[idx["train"]], tab[idx["val"]], y_all[idx["val"]], early_stopping_rounds=30)
+                add(rows, "LightGBM (144 feats)", lgb_model.predict(tab[idx["test"]]))
 
-        loaders = build_indexed_dataloaders(all_lob, y_all, idx, seq_len=SEQ_LEN, batch_size=128)
-        trainer = DeepLearningTrainer(DeepLOB(num_classes=3, lstm_hidden=64), learning_rate=0.0005)
-        trainer.fit(loaders["train"], loaders["val"], epochs=epochs, patience=3)
-        _, _, _, dl_preds, _ = trainer.evaluate(loaders["test"])
-        add("DeepLOB (ours)", dl_preds)
+                loaders = build_indexed_dataloaders(all_lob, y_all, idx, seq_len=SEQ_LEN, batch_size=128)
+                trainer = DeepLearningTrainer(DeepLOB(num_classes=3, lstm_hidden=64), learning_rate=0.0005)
+                trainer.fit(loaders["train"], loaders["val"], epochs=epochs, patience=3)
+                _, _, _, dl_preds, _ = trainer.evaluate(loaders["test"])
+                add(rows, "DeepLOB (ours)", dl_preds)
 
-        if k in PUBLISHED_DEEPLOB:
-            acc, wf1 = PUBLISHED_DEEPLOB[k]
-            rows.append({"horizon_k": k, "model": "DeepLOB (published)", "accuracy": acc / 100,
-                         "weighted_f1": wf1 / 100, "macro_f1": np.nan})
-        pd.DataFrame(rows).to_csv(ckpt, index=False)
-        all_rows.extend(rows)
+                if k in PUBLISHED_DEEPLOB:
+                    acc, wf1 = PUBLISHED_DEEPLOB[k]
+                    rows.append({"seed": seed, "horizon_k": k, "model": "DeepLOB (published)", "accuracy": acc / 100,
+                                 "weighted_f1": wf1 / 100, "macro_f1": np.nan})
+                pd.DataFrame(rows).to_csv(ckpt, index=False)
+                all_rows.extend(rows)
+
+            # Checkpoint 2: tabular models given the same 100-row history DeepLOB sees
+            hckpt = out_dir / f"setup2_k{k}_history_s{seed}.csv"
+            if hckpt.exists():
+                print(f"[+] seed {seed} k={k}: loading checkpoint {hckpt.name}")
+                all_rows.extend(pd.read_csv(hckpt).to_dict("records"))
+                continue
+            np.random.seed(seed)
+            rows = []
+            lr = LogisticRegressionBaseline(C=1.0)
+            lr.model.set_params(class_weight=None)
+            lr.fit(tab_hist[idx["train"]], y_all[idx["train"]])
+            add(rows, "Logistic Regression + history", lr.predict(tab_hist[idx["test"]]))
+            lgb_model = LightGBMLOB(num_leaves=63, max_depth=8, learning_rate=0.05, n_estimators=500,
+                                    random_state=seed, class_weight=None)
+            lgb_model.fit(tab_hist[idx["train"]], y_all[idx["train"]], tab_hist[idx["val"]], y_all[idx["val"]],
+                          early_stopping_rounds=30)
+            add(rows, "LightGBM (144 feats + history)", lgb_model.predict(tab_hist[idx["test"]]))
+            pd.DataFrame(rows).to_csv(hckpt, index=False)
+            all_rows.extend(rows)
 
     df = pd.DataFrame(all_rows)
     df.to_csv(out_dir / "fi2010_setup2_results.csv", index=False)
+    summary = (df.groupby(["horizon_k", "model"], sort=False)[["accuracy", "weighted_f1", "macro_f1"]]
+                 .agg(["mean", "std", "count"]).round(4))
+    summary.columns = ["_".join(c) for c in summary.columns]
+    summary.reset_index().to_csv(out_dir / "fi2010_setup2_summary.csv", index=False)
     return df
 
 
@@ -128,6 +173,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--horizons", type=int, nargs="+", default=[10, 20, 50, 100])
     parser.add_argument("--epochs", type=int, default=15)
+    parser.add_argument("--seeds", type=int, nargs="+", default=[0])
     args = parser.parse_args()
-    out = run_fi2010_benchmark(args.horizons, args.epochs)
+    out = run_fi2010_benchmark(args.horizons, args.epochs, args.seeds)
     print(out.to_string(index=False))

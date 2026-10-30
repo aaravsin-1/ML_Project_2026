@@ -21,6 +21,18 @@ class CryptoLOBLoader:
     """Converts the Coinbase snapshot format into the canonical 40-column LOB layout."""
 
     @staticmethod
+    def load_absolute_times_ms(file_path: Union[str, Path]) -> np.ndarray:
+        """Snapshot times as UTC epoch milliseconds (to align different coins in time)."""
+        path = Path(file_path)
+        cache_path = path.with_suffix(".times.npy")
+        if cache_path.exists() and cache_path.stat().st_mtime >= path.stat().st_mtime:
+            return np.load(cache_path)
+        ts = pd.to_datetime(pd.read_csv(path, usecols=["system_time"])["system_time"], utc=True)
+        epoch_ms = (ts - pd.Timestamp("1970-01-01", tz="UTC")).dt.total_seconds().to_numpy() * 1000.0
+        np.save(cache_path, epoch_ms)
+        return epoch_ms
+
+    @staticmethod
     def load_coinbase_snapshots(
         file_path: Union[str, Path],
         num_levels: int = 10,

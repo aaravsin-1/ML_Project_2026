@@ -1,0 +1,2 @@
+num_trees,num_class,total_leaves,num_features,best_iteration,rows,cpp_p50_ns,cpp_p99_ns,cpp_p999_ns,cpp_batch_ns_per_row,cpp_max_abs_diff_vs_lightgbm,cpp_argmax_agreement,python_lightgbm_p50_ns,python_lightgbm_p99_ns
+327,3,20601,27,109,20000,10500.0,17900.0,51800.0,10634.4,0,1.0,11730050.0,33437168.0

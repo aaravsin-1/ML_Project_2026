@@ -33,6 +33,8 @@ DATASETS = {
     # name: (kaggle args, folder, file that marks it as done, approx download size)
     "btc": (["datasets", "download", "martinsn/high-frequency-crypto-limit-order-book-data", "-f", "BTC_1sec.csv"],
             "crypto", "BTC_1sec.csv", "330 MB"),
+    "eth": (["datasets", "download", "martinsn/high-frequency-crypto-limit-order-book-data", "-f", "ETH_1sec.csv"],
+            "crypto", "ETH_1sec.csv", "340 MB"),
     "fi2010": (["datasets", "download", "ulfricirons/fi-2010"],
                "fi2010", "BenchmarkDatasets/NoAuction/1.NoAuction_Zscore/" + FI2010_FILES[0], "2.1 GB"),
     "optiver_close": (["competitions", "download", "-c", "optiver-trading-at-the-close", "-f", "train.csv"],

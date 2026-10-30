@@ -230,8 +230,11 @@ def run_rvp_experiment(n_folds: int = 4) -> pd.DataFrame:
             base_cols + [c for c in nn_trans.columns if c.startswith("nn")]),
     }
 
-    # One checkpoint row per (fold, model): finished fits are skipped when resuming
-    rows_path = ckpt / f"fold_results_{n_folds}folds.csv"
+    # One checkpoint row per (fold, model): finished fits are skipped when resuming.
+    # v2: early stopping uses the last 10% (by time) of each fold's TRAINING windows, so the
+    # scored validation fold is never used for model selection. (v1 early-stopped on the
+    # scored fold; its file is kept for comparison.)
+    rows_path = ckpt / f"fold_results_{n_folds}folds_v2.csv"
     rows = pd.read_csv(rows_path).to_dict("records") if rows_path.exists() else []
     done = {(r["fold"], r["model"]) for r in rows}
 
@@ -245,6 +248,10 @@ def run_rvp_experiment(n_folds: int = 4) -> pd.DataFrame:
 
     for fold, (tr_ids, va_ids) in enumerate(forward_folds(time_pos, n_folds)):
         tr_mask, va_mask = df.time_id.isin(tr_ids).to_numpy(), df.time_id.isin(va_ids).to_numpy()
+        tr_pos = time_pos.loc[tr_ids]
+        es_ids = tr_pos.index[tr_pos >= tr_pos.quantile(0.9)]
+        es_mask = df.time_id.isin(es_ids).to_numpy() & tr_mask
+        fit_mask = tr_mask & ~es_mask
         y_va = df.target.to_numpy()[va_mask]
         record(fold, "Naive (current RV)", lambda: rmspe(y_va, df.book_rv1_0.to_numpy()[va_mask]))
 
@@ -255,21 +262,27 @@ def run_rvp_experiment(n_folds: int = 4) -> pd.DataFrame:
                 frame = frame.copy()
                 frame["stock_rv_target_ratio"] = frame.stock_id.map(ratio)
                 X, y = frame[cols + ["stock_rv_target_ratio"]].to_numpy(np.float32), frame.target.to_numpy()
-                model = fit_lgb(X[tr_mask], y[tr_mask], X[va_mask], y[va_mask])
+                model = fit_lgb(X[fit_mask], y[fit_mask], X[es_mask], y[es_mask])
                 return rmspe(y[va_mask], model.predict(X[va_mask]))
             record(fold, name, fit_variant)
 
     # Shuffled K-fold on the base model, to show how optimistic non-temporal CV is
     from sklearn.model_selection import KFold
     X, y = df[base_cols].to_numpy(np.float32), df.target.to_numpy()
+    rng = np.random.default_rng(0)
     for fold, (tr, va) in enumerate(KFold(n_folds, shuffle=True, random_state=0).split(X)):
+        es = rng.random(len(tr)) < 0.1  # random early-stopping slice of the shuffled training rows
         record(fold, "LightGBM, shuffled K-fold CV",
-               lambda: rmspe(y[va], fit_lgb(X[tr], y[tr], X[va], y[va]).predict(X[va])))
+               lambda: rmspe(y[va], fit_lgb(X[tr[~es]], y[tr[~es]], X[tr[es]], y[tr[es]]).predict(X[va])))
 
     res = pd.DataFrame(rows)
     res.to_csv(out / "rvp_folds.csv", index=False)
     summary = res.groupby("model", sort=False).rmspe.agg(["mean", "std"]).reset_index()
     summary.to_csv(out / "rvp_summary.csv", index=False)
+    v1 = ckpt / f"fold_results_{n_folds}folds.csv"
+    if v1.exists():  # the earlier, slightly optimistic protocol, for comparison
+        old = pd.read_csv(v1).groupby("model", sort=False).rmspe.agg(["mean", "std"]).reset_index()
+        old.to_csv(out / "rvp_summary_v1_early_stop_on_scored_fold.csv", index=False)
     return summary
 
 
