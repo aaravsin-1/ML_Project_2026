@@ -34,6 +34,14 @@ def test_baselines_shapes():
     assert probs_lr.shape == (50, 3)
 
 
+def test_momentum_uses_only_realized_labels():
+    """The label at t-1 overlaps the future, so momentum must look back k rows."""
+    y = np.array([1, 2, 0, 1, 2, 2, 0, 1])
+    mom = NaiveMomentumBaseline(horizon_k=3)
+    preds = mom.predict(y, np.array([2, 3, 7]))
+    assert preds.tolist() == [0, 1, 2]  # row 2 has no realized label yet -> FLAT
+
+
 def test_tabular_tree_models():
     X = np.random.randn(100, 15).astype(np.float32)
     y = np.random.choice([0, 1, 2], size=100)

@@ -3,8 +3,8 @@
 Designed to detect common high-frequency quantitative failure modes:
 1. Generalization Gap (Train vs Val vs Test over-fitting)
 2. Matthews Correlation Coefficient (MCC) & Cohen's Kappa for severe class imbalance
-3. Permutation Reality Check (verifies model edge collapses to 0 on shuffled targets)
-4. Temporal & Lookahead Leakage Audit
+3. Target Permutation Check (model edge must collapse to 0 on shuffled targets)
+4. Purged & embargoed time-series cross validation
 5. Regime Generalization (Large-tick trained model tested on Small-tick regime)
 """
 
@@ -72,11 +72,13 @@ class OverfittingDiagnostics:
         y_test: np.ndarray,
         n_permutations: int = 5
     ) -> Dict[str, float]:
-        """Target Permutation Test (White's Reality Check).
-        
-        If the model or feature pipeline has forward lookahead leakage, it will still
-        find 'predictive' power on randomly shuffled target labels.
-        If the pipeline is clean, Macro-F1 must collapse to random chance (~0.333) and MCC to 0.0.
+        """Target Permutation Check.
+
+        Trains on shuffled training targets and scores on the real test targets. Any
+        edge that survives points to a bug that ties features to labels by row position
+        or to a test set that can be predicted without learning. It does NOT detect
+        features that look at future prices: shuffling breaks that link as well, so a
+        pass here is not evidence of zero lookahead leakage.
         """
         rng = np.random.default_rng(999)
         perm_f1s = []

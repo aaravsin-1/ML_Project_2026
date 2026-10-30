@@ -24,6 +24,7 @@ class MicrostructureStrategyRunner:
         lot = self.simulator.lot_size
         max_inv = self.simulator.max_inventory
         equity = np.zeros(n, dtype=np.float64)
+        num_trades = 0
 
         for t in range(n):
             sig = signals[t]
@@ -33,13 +34,15 @@ class MicrostructureStrategyRunner:
             if sig == 1 and (pos + lot) <= max_inv:
                 cash -= lot * p
                 pos += lot
+                num_trades += 1
             elif sig == 2 and (pos - lot) >= -max_inv:
                 cash += lot * p
                 pos -= lot
+                num_trades += 1
 
             equity[t] = cash + (pos * p)
 
-        return {"equity": equity, "final_pnl": equity[-1] - self.simulator.initial_cash}
+        return {"equity": equity, "final_pnl": equity[-1] - self.simulator.initial_cash, "num_trades": num_trades}
 
     def run_realistic_aggressive(
         self,
@@ -73,42 +76,46 @@ class MicrostructureStrategyRunner:
         signals: np.ndarray,
         lob_40: np.ndarray,
         vpin_series: np.ndarray,
-        toxic_vpin_thresh: float = 0.65
+        toxic_vpin_thresh: float,
+        max_wait_events: int = 50
     ) -> Dict[str, np.ndarray]:
-        """Dynamic Passive Market Maker: Captures spread/rebates with active VPIN adverse defense."""
+        """Passive maker: joins the touch on the predicted side, stands down when VPIN is toxic.
+
+        At most one working order exists at a time. It is posted at the touch when it
+        reaches the exchange (after latency), fills only under the trade-through rule in
+        `ExecutionSimulator.passive_fill_index`, and is cancelled when the signal flips,
+        VPIN turns toxic, or it has waited `max_wait_events`.
+        """
         self.simulator.reset()
         n = len(signals)
         mid_prices = (lob_40[:, 0] + lob_40[:, 2]) / 2.0
         toxic_avoidance_count = 0
+        orders_posted = 0
+        working = None  # (side, price, fill_idx or None, expiry_idx, mid_at_decision)
 
         for t in range(n):
             sig = signals[t]
-            vpin_t = vpin_series[t]
+            toxic = vpin_series[t] > toxic_vpin_thresh
+            desired = 1 if sig == 1 else (-1 if sig == 2 else 0)
 
-            # VPIN Toxicity Defense: Cancel resting quotes during toxic flow
-            if vpin_t > toxic_vpin_thresh:
+            # 1. Resolve the working order: fill, expire, or cancel.
+            if working is not None:
+                side, price, fill_idx, expiry, mid_dec = working
+                if fill_idx is not None and fill_idx <= t:
+                    self.simulator.fill_passive_order(fill_idx, side, price, mid_dec)
+                    working = None
+                elif t >= expiry or toxic or desired != side:
+                    working = None
+
+            if toxic:
                 toxic_avoidance_count += 1
-                # Do not provide passive liquidity into informed toxic flow
-            else:
-                # Safe flow regime: provide liquidity on predicted trend side
-                if sig == 1:
-                    # Expect price rise: rest passive bid to buy at bid price
-                    self.simulator.execute_passive_order(
-                        decision_idx=t,
-                        side=1,
-                        lob_40=lob_40,
-                        vpin_metric=vpin_t,
-                        vpin_toxic_threshold=toxic_vpin_thresh
-                    )
-                elif sig == 2:
-                    # Expect price fall: rest passive ask to sell at ask price
-                    self.simulator.execute_passive_order(
-                        decision_idx=t,
-                        side=-1,
-                        lob_40=lob_40,
-                        vpin_metric=vpin_t,
-                        vpin_toxic_threshold=toxic_vpin_thresh
-                    )
+            elif working is None and desired != 0:
+                # 2. Post a new order at the touch seen when it arrives at the exchange.
+                post_idx = self.simulator.arrival_index(t, n)
+                price = lob_40[post_idx, 2] if desired > 0 else lob_40[post_idx, 0]
+                fill_idx = self.simulator.passive_fill_index(desired, price, post_idx, lob_40, max_wait_events)
+                working = (desired, price, fill_idx, post_idx + max_wait_events, mid_prices[t])
+                orders_posted += 1
 
             self.simulator.update_mark_to_market(mid_prices[t])
 
@@ -117,5 +124,6 @@ class MicrostructureStrategyRunner:
             "final_pnl": self.simulator.equity_curve[-1] - self.simulator.initial_cash,
             "total_fees": self.simulator.total_fees,
             "num_trades": len(self.simulator.trades),
+            "orders_posted": orders_posted,
             "toxic_avoidance_count": toxic_avoidance_count
         }

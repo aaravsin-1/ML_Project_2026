@@ -1,88 +1,69 @@
 # High-Frequency Limit Order Book Alpha & Microstructure Execution Engine
 
-[![Tests](https://img.shields.io/badge/pytest-12%20passed-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-20%20passed-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](setup.py)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%20CUDA-orange.svg)](src/models/)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20%20SIMD-darkblue.svg)](cpp/)
-[![Throughput](https://img.shields.io/badge/C%2B%2B%20Throughput-459k%20msgs%2Fsec-red.svg)](cpp/include/)
-[![P50 Latency](https://img.shields.io/badge/P50%20Latency-1.7%20%CE%BCs-green.svg)](artifacts/cpp_latency_benchmarks.csv)
 
-An institution-grade research framework and production execution system evaluating short-term price predictability in Limit Order Book (LOB) dynamics. The framework demonstrates that while advanced spatio-temporal deep neural architectures (DeepLOB, TLOB) identify rich non-linear patterns, **real-world profitability is dictated by execution latency, exchange fees, spread crossing, and adverse selection**. Under sub-millisecond execution constraints, a fast C++ decision tree ensemble (LightGBM) achieves higher realized net Sharpe ratios than mathematically superior but computationally slower deep learning models.
+A research framework for short-horizon price prediction from Limit Order Book (LOB) data and for testing whether predictions survive realistic execution. It covers microstructure features (OFI, multi-level OFI, VPIN, micro-price), a model hierarchy from naive baselines to DeepLOB and TLOB, an execution simulator with spread crossing, book walking, fees, latency and passive fills, and a C++20 inference-latency benchmark.
+
+> **Important: all results below are on synthetic data.** The [generator](src/data/synthetic_generator.py) plants a hidden "informed trader" state that persists for 15–60 events and skews order flow. Any predictability the models find is the predictability built into that generator. The results show the pipeline working end to end and let you compare methods under controlled conditions; they say nothing about real markets. Loaders for FI-2010, LOBSTER and crypto data are included but not used in the reported experiments.
+
+**Headline findings (5 independent sessions, mean ± std across seeds):**
+- LightGBM is the strongest model (macro-F1 **0.584 ± 0.012** at k = 20). It beats DeepLOB in 5/5 seeds (+0.025 on average) and logistic regression in 5/5 (+0.021). Its edge over Random Forest (+0.006) is within seed noise.
+- An honest naive baseline (repeat the last *realized* k-event move) already reaches **0.519 ± 0.013**, so the learned models add about 0.04–0.07 macro-F1 on top of it.
+- Most of the signal is in levels 1–3 of the book. Cumulative L3 depth imbalance alone accounts for about half of LightGBM's split gain.
+- With an aggressive taker, LightGBM's signals net more than DeepLOB's in 4/5 seeds. **The gap is already there at zero latency, so it comes from signal quality, not speed.** Both models lose roughly the same ~$390–400 when latency rises from 0 to 100 ms. At their measured inference latencies (0.14 ms vs 2.4 ms), the latency difference is worth only about $10.
 
 ---
 
 ## Table of Contents
-1. [Core Architecture & System Overview](#core-architecture--system-overview)
+1. [Core Architecture](#core-architecture)
 2. [Mathematical Foundations & Microstructure Signals](#mathematical-foundations--microstructure-signals)
-   - [Limit Order Book Dynamics](#1-limit-order-book-dynamics)
-   - [Order Flow Imbalance (OFI & MLOFI)](#2-order-flow-imbalance-ofi--mlofi)
-   - [Volume-Synchronized Probability of Informed Trading (VPIN)](#3-volume-synchronized-probability-of-informed-trading-vpin)
-   - [The Micro-Price Estimator](#4-the-micro-price-estimator)
-   - [Strict Non-Leakage Normalization & Bilinear Normalization (BiN)](#5-strict-non-leakage-normalization--bilinear-normalization-bin)
-3. [Machine Learning Progression Hierarchy (Tiers 0–5)](#machine-learning-progression-hierarchy-tiers-05)
-4. [Empirical Experimental Results](#empirical-experimental-results)
-   - [Experiment A: Establishing Predictive Information](#experiment-a-establishing-predictive-information)
-   - [Experiment B: The Horizon of Signal Survival (Alpha Decay)](#experiment-b-the-horizon-of-signal-survival-alpha-decay)
-   - [Experiment C: Depth Ablation & Feature Attribution](#experiment-c-depth-ablation--feature-attribution)
-   - [Experiment D: Economic Reality & Latency vs Net Profitability](#experiment-d-economic-reality--latency-vs-net-profitability)
-5. [Ultra-Low-Latency Systems Engineering (C++20)](#ultra-low-latency-systems-engineering-c20)
-6. [Repository Structure](#repository-structure)
-7. [Installation & Quickstart Guide](#installation--quickstart-guide)
-8. [Automated Test Suite](#automated-test-suite)
-9. [References](#references)
+3. [Model Hierarchy (Tiers 0–5)](#model-hierarchy-tiers-05)
+4. [Methodology: Leakage Controls](#methodology-leakage-controls)
+5. [Empirical Results](#empirical-results)
+6. [C++20 Latency Benchmark](#c20-latency-benchmark)
+7. [Repository Structure](#repository-structure)
+8. [Installation & Quickstart](#installation--quickstart)
+9. [Automated Test Suite](#automated-test-suite)
+10. [Known Limitations](#known-limitations)
+11. [References](#references)
 
 ---
 
-## Core Architecture & System Overview
+## Core Architecture
 
 ```
-                      +---------------------------------------+
-                      | Raw Market Data Feed (ITCH / Snapshots) |
-                      +---------------------------------------+
-                                          |
-                                          v
-                      +---------------------------------------+
-                      |   LOB Reconstruction (10 Depth Levels)|
-                      +---------------------------------------+
-                                          |
-                      +-------------------+-------------------+
-                      |                                       |
-                      v                                       v
-         +--------------------------+           +--------------------------+
-         |  Microstructural Signals  |           |   Raw LOB Tensor (40-F)  |
-         |  - OFI & MLOFI (PCA)     |           |   - Decimal Normalization|
-         |  - VPIN Toxicity         |           |   - Bilinear Norm (BiN)  |
-         |  - Micro-price & Slopes  |           +--------------------------+
-         +--------------------------+                         |
-                      |                                       |
-                      v                                       v
-         +--------------------------+           +--------------------------+
-         |  Tabular ML Hierarchy     |           | Spatio-Temporal Models   |
-         |  - Tier 0: Naive Momentum|           | - Tier 4: LSTM / GRU     |
-         |  - Tier 1: Logistic Reg  |           | - Tier 5: DeepLOB (CNN)  |
-         |  - Tier 2: Random Forest |           | - Tier 5: TLOB (Dual-Att)|
-         |  - Tier 3: LightGBM      |           +--------------------------+
-         +--------------------------+                         |
-                      |                                       |
-                      +-------------------+-------------------+
-                                          | Predictions (UP/FLAT/DOWN)
-                                          v
-                      +---------------------------------------+
-                      |   High-Fidelity Execution Simulator   |
-                      |   - Spread Crossing Penalty           |
-                      |   - Multi-Level Depth Slippage        |
-                      |   - Maker Rebates vs Taker Fees       |
-                      |   - VPIN Adverse Selection Defense    |
-                      |   - End-to-End System Latency Delay   |
-                      +---------------------------------------+
-                                          |
-                                          v
-                      +---------------------------------------+
-                      |  Ultra-Low Latency C++20 Core Engine  |
-                      |  - SIMD Vectorized Feature Extraction |
-                      |  - Native Decision Tree Inference     |
-                      |  - 459k msgs/sec | P50: 1.7 microseconds|
-                      +---------------------------------------+
+                 +----------------------------------------------+
+                 | Synthetic LOB generator (10 levels, ~10 ms)  |
+                 | snapshots + trade tape + timestamps          |
+                 +----------------------------------------------+
+                                       |
+                 +---------------------+----------------------+
+                 v                                            v
+   +-----------------------------+            +------------------------------+
+   | Microstructure features     |            | Raw LOB tensor (40 features) |
+   | OFI, MLOFI + PCA, VPIN,     |            | decimal-precision normalized |
+   | micro-price, imbalances,    |            +------------------------------+
+   | slopes, spread in ticks     |                           |
+   +-----------------------------+                           |
+                 |                                           |
+                 v                                           v
+   +-----------------------------+            +------------------------------+
+   | Tabular models              |            | Sequence models (100 steps)  |
+   | momentum, logistic, RF,     |            | LSTM, DeepLOB, TLOB          |
+   | LightGBM                    |            +------------------------------+
+   +-----------------------------+                           |
+                 +---------------------+---------------------+
+                                       | predictions (FLAT / UP / DOWN)
+                                       v
+                 +----------------------------------------------+
+                 | Execution simulator                          |
+                 | spread crossing, book walking, taker fees,   |
+                 | maker rebates, trade-through passive fills,  |
+                 | wall-clock latency, VPIN gating              |
+                 +----------------------------------------------+
 ```
 
 ---
@@ -90,181 +71,164 @@ An institution-grade research framework and production execution system evaluati
 ## Mathematical Foundations & Microstructure Signals
 
 ### 1. Limit Order Book Dynamics
-The limit order book aggregates resting supply and demand across discrete price ticks. At any event time $t$, the state of the top $M$ price levels is given by:
+At event time $t$ the top $M$ levels of the book are
 $$LOB(t) = \left\{ (p_m^a(t), q_m^a(t), p_m^b(t), q_m^b(t)) \right\}_{m=1}^M$$
-where $p_1^a(t)$ and $p_1^b(t)$ represent the best ask and best bid prices, and $q_1^a(t)$ and $q_1^b(t)$ represent the corresponding quantities. The instantaneous bid-ask spread is:
-$$S(t) = p_1^a(t) - p_1^b(t)$$
-and the mid-price is:
-$$P_{mid}(t) = \frac{p_1^a(t) + p_1^b(t)}{2}$$
+with spread $S(t) = p_1^a(t) - p_1^b(t)$ and mid-price $P_{mid}(t) = \tfrac{1}{2}(p_1^a(t) + p_1^b(t))$.
 
 ### 2. Order Flow Imbalance (OFI & MLOFI)
-Formalized by **Cont, Kukanov, and Stoikov (2014)**, Level-1 OFI isolates net buying vs selling pressure across consecutive snapshots $[t-1, t]$. The bid demand component $\Delta W(t)$ is defined as:
-$$\Delta W(t) = \begin{cases} q_1^b(t), & \text{if } p_1^b(t) > p_1^b(t-1) \\ q_1^b(t) - q_1^b(t-1), & \text{if } p_1^b(t) = p_1^b(t-1) \\ -q_1^b(t-1), & \text{if } p_1^b(t) < p_1^b(t-1) \end{cases}$$
-The ask supply component $\Delta V(t)$ is symmetrically defined as:
-$$\Delta V(t) = \begin{cases} q_1^a(t), & \text{if } p_1^a(t) < p_1^a(t-1) \\ q_1^a(t) - q_1^a(t-1), & \text{if } p_1^a(t) = p_1^a(t-1) \\ -q_1^a(t-1), & \text{if } p_1^a(t) > p_1^a(t-1) \end{cases}$$
-The net Order Flow Imbalance is:
-$$OFI(t) = \Delta W(t) - \Delta V(t)$$
-**Multi-Level OFI (MLOFI)** extends this computation to all $M=10$ levels. To prevent multicollinearity and extract dense representations of book-wide pressure, Principal Component Analysis (PCA) decomposes the 10-level vector into 3 orthogonal factor components:
-$$MLOFI(t) \xrightarrow{\text{PCA}} [PC_1(t), PC_2(t), PC_3(t)]$$
-where $PC_1$ captures aggregate book pressure, $PC_2$ captures book rotation/slope, and $PC_3$ captures curvature.
+Following **Cont, Kukanov, and Stoikov (2014)**, the bid-side demand change is
+$$\Delta W(t) = \begin{cases} q_1^b(t), & p_1^b(t) > p_1^b(t-1) \\ q_1^b(t) - q_1^b(t-1), & p_1^b(t) = p_1^b(t-1) \\ -q_1^b(t-1), & p_1^b(t) < p_1^b(t-1) \end{cases}$$
+the ask-side supply change $\Delta V(t)$ is defined symmetrically, and $OFI(t) = \Delta W(t) - \Delta V(t)$.
+**Multi-Level OFI** applies the same formula at each of the $M = 10$ levels. PCA (fit on the training period only) compresses the 10-level vector into 3 components.
 
 ### 3. Volume-Synchronized Probability of Informed Trading (VPIN)
-Introduced by **Easley, Lopez de Prado, and O'Hara (2012)**, VPIN operates on a volume clock rather than a chronological clock. Continuous transaction flow is bucketed into consecutive units of constant volume $V$. For each bucket $\tau$, buy-initiated volume $V_\tau^B$ and sell-initiated volume $V_\tau^S$ are tracked:
-$$VPIN = \frac{\sum_{\tau=1}^N |V_\tau^B - V_\tau^S|}{N \times V}$$
-Sustained elevated VPIN indicates aggressive informed traders sweeping the book, serving as a real-time toxicity trigger to cancel passive limit orders and prevent adverse selection.
+Following **Easley, López de Prado, and O'Hara (2012)**, trades are grouped into buckets of constant volume $V$, and
+$$VPIN = \frac{\sum_{\tau=1}^N |V_\tau^B - V_\tau^S|}{N \times V}.$$
+VPIN is computed from the generator's trade tape and mapped onto each snapshot using only buckets completed at or before that snapshot's timestamp.
 
 ### 4. The Micro-Price Estimator
-Stoikov (2018) adjusted the naive mid-price for instantaneous queue imbalances:
-$$I(t) = \frac{q_1^b(t) - q_1^a(t)}{q_1^b(t) + q_1^a(t)}$$
-$$P_{micro}(t) = \frac{q_1^b(t) \cdot p_1^a(t) + q_1^a(t) \cdot p_1^b(t)}{q_1^b(t) + q_1^a(t)} = P_{mid}(t) + \frac{I(t)}{2} S(t)$$
-The micro-price deviation $P_{micro}(t) - P_{mid}(t)$ serves as an effective target and feature for short-horizon directional predictions.
+Following **Stoikov (2018)**, with $I(t) = \frac{q_1^b - q_1^a}{q_1^b + q_1^a}$,
+$$P_{micro}(t) = \frac{q_1^b p_1^a + q_1^a p_1^b}{q_1^b + q_1^a} = P_{mid}(t) + \frac{I(t)}{2} S(t).$$
+The deviation $P_{micro} - P_{mid}$ is used as a feature.
 
-### 5. Strict Non-Leakage Normalization & Bilinear Normalization (BiN)
-Standard z-score normalization across the whole dataset causes forward temporal leakage. The framework provides three leakage-free normalization methods:
-- **Decimal Precision Normalization**: Re-scales prices and volumes via static lot/tick parameters: $(P - P_0) / P_0$ and $\log(1 + V / V_0)$.
-- **Causal Rolling Z-Score**: Computes mean $\mu_t$ and standard deviation $\sigma_t$ strictly within causal lookback window $W$: $[t-W, t]$.
-- **Bilinear Normalization (BiN)** (Tran et al., 2020): Dynamically normalizes tensors across both the feature dimension and the sequence time dimension via backpropagated parameters:
-  $$\tilde{X} = \Gamma_{feat} \odot \left( \frac{X - \mu_{time}}{\sigma_{time} + \epsilon} \right) + B_{feat}$$
-  $$\hat{X} = \Gamma_{time} \odot \left( \frac{\tilde{X} - \mu_{feat}}{\sigma_{feat} + \epsilon} \right) + B_{time}$$
+### 5. Spread Feature
+The spread enters as an integer number of ticks. An earlier version used relative spread $S/P_{mid}$. With a fixed one-tick spread this is just a monotone function of the price level, and float32 rounding gave it two distinct values. LightGBM ranked that artifact as its top feature, so it was removed.
+
+### 6. Normalization
+- **Decimal precision normalization** for the sequence models: $(P - P_0)/P_0$ and $\log(1 + V/V_0)$, with $P_0, V_0$ taken from the first 100 training snapshots.
+- **Causal rolling z-score** and **Bilinear Normalization (BiN)** (Tran et al., 2020) are implemented in [normalizers.py](src/data/normalizers.py). BiN is used inside TLOB.
 
 ---
 
-## Machine Learning Progression Hierarchy (Tiers 0–5)
+## Model Hierarchy (Tiers 0–5)
 
-To prevent premature attribution of success to deep learning, models are structured into 6 progressive tiers:
+| Tier | Model | Purpose |
+|:---:|:---|:---|
+| **Tier 0** | Naïve Momentum, Naïve Flat | Momentum repeats the label at $t-k$, the latest move actually known at decision time. Flat predicts the majority class. |
+| **Tier 1** | Logistic Regression | Linear baseline on standardized features. |
+| **Tier 2** | Random Forest | Non-linear baseline. |
+| **Tier 3** | LightGBM | Gradient-boosted trees with early stopping on validation. |
+| **Tier 4** | LSTM | Recurrent net over 100-snapshot windows. |
+| **Tier 5** | DeepLOB, TLOB | CNN + Inception + LSTM, and a dual-attention transformer with BiN. |
 
-| Tier | Model Architecture | Primary Scientific Objective | Microstructural Relevance |
-|:---:|:---|:---|:---|
-| **Tier 0** | Naïve Momentum & Naïve Flat | Establish absolute baseline boundaries. | Tests whether the market exhibits simple autocorrelation or pure noise. |
-| **Tier 1** | Logistic Regression | Linear statistical baseline. | Validates Cont et al.'s linear price impact of OFI. |
-| **Tier 2** | Random Forest | Non-linear tree baseline. | Captures interactions between depth depletion and spread widening. |
-| **Tier 3** | LightGBM | State-of-the-art tabular GBDT. | Leaf-wise tree growth optimized for microsecond-scale execution. |
-| **Tier 4** | LSTM & GRU | Sequential temporal neural nets. | Models memory and trajectory across 100 consecutive snapshots. |
-| **Tier 5** | DeepLOB | Spatio-temporal CNN + Inception + LSTM. | Multi-scale causal convolutions across depth levels + temporal LSTM. |
-| **Tier 5** | TLOB | Transformer + Dual Attention + BiN. | Spatial Feature Attention + Temporal Sequence Attention. |
-
----
-
-## Empirical Experimental Results
-
-All experiments were executed on out-of-sample data under strict chronological splits (70% train, 15% validation, 15% test; no shuffling, zero lookahead leakage).
-
-### Experiment A: Establishing Predictive Information
-
-Validation of the progression hierarchy for horizon $k=20$:
-
-| Tier | Model | Out-of-Sample Accuracy | Macro F1-Score | Weighted F1 | Cross-Entropy Loss |
-|:---:|:---|:---:|:---:|:---:|:---:|
-| **Tier 0** | Naïve Flat | 62.80% | 0.2572 | 0.4845 | 5.9306 |
-| **Tier 1** | Logistic Regression | 68.43% | 0.5079 | 0.6327 | 0.6772 |
-| **Tier 2** | Random Forest | 62.88% | **0.6206** | 0.6343 | 0.6989 |
-| **Tier 3** | **LightGBM** | 60.67% | **0.6039** | 0.6190 | 0.8008 |
-| **Tier 4** | LSTM | 64.91% | 0.4195 | 0.5728 | 0.6880 |
-| **Tier 5** | DeepLOB | 64.83% | 0.5515 | 0.6338 | 0.8001 |
-| **Tier 5** | TLOB | **66.37%** | 0.4657 | 0.6016 | 0.7331 |
-
-> **Key Finding**: Linear OFI regression achieves a 0.5079 Macro-F1, confirming exploitable linear signal in LOB data. Non-linear models (Random Forest and LightGBM) lift Macro-F1 above 0.60, demonstrating significant non-linear interactions across depth queues.
-
-![Experiment A Model Comparison](artifacts/experiment_a_model_comparison.png)
+Every learned model uses **balanced class weights**, so all of them optimize the same objective and macro-F1 is comparable across tiers.
 
 ---
 
-### Experiment B: The Horizon of Signal Survival (Alpha Decay)
+## Methodology: Leakage Controls
 
-Mapping the decay curve of predictive power across event horizons:
+- **Train-only fitting.** PCA loadings and normalizer scales are estimated on the training period. All features are causal: row $t$ uses snapshots $\le t$.
+- **Purged splits.** The split is 70/15/15 chronological. The last $k$ rows of train and validation are dropped because their labels look into the next split. So are the final $k$ rows of the session, whose labels are undefined. See [purged_split_indices](src/data/lob_dataset.py).
+- **Same test rows for every model.** Sequence windows end exactly at the tabular test rows, taking earlier rows as causal context.
+- **Labels.** Smoothed mid-price ($5$-event trailing mean) at $t+k$ vs $t$, with a ±1.5 bp threshold for UP/DOWN.
+- **Seeds.** Every experiment runs on 5 independently generated sessions (seeds 0–4, 60,000 events each, about 10 minutes of simulated trading). Tables report the mean ± sample std across seeds.
 
-| Horizon ($k$ events) | Accuracy | Macro F1-Score | Weighted F1 | Cross-Entropy Loss | Microstructural Interpretation |
-|:---:|:---:|:---:|:---:|:---:|:---|
-| **$k = 10$** | **80.03%** | **0.5622** | **0.8172** | **0.4725** | Sub-second regime: Maximum exploitable alpha. |
-| **$k = 20$** | 60.67% | **0.6039** | 0.6190 | 0.8008 | Optimal signal balance across UP/DOWN/FLAT. |
-| **$k = 50$** | 48.91% | 0.4413 | 0.4489 | 1.0267 | Alpha begins severe degradation. |
-| **$k = 100$** | 49.07% | 0.3616 | 0.4154 | 1.0234 | Decays toward random baseline (0.333). |
-
-![Experiment B Signal Decay](artifacts/experiment_b_signal_decay.png)
+The [verification script](scripts/verify_robustness_and_leakage.py) adds purged 5-fold CV with a 1% embargo, a target-permutation check, the momentum-baseline comparison, and a transfer test to a small-tick regime. Each PASS/FAIL is computed from the value against the stated criterion ([report](artifacts/overfitting_verification_report.csv)). The permutation check only detects label/row misalignment. It cannot prove that features don't look ahead; that is what the train-only fitting and the causality test in [test_features.py](tests/test_features.py) are for.
 
 ---
 
-### Experiment C: Depth Ablation & Feature Attribution
+## Empirical Results
 
-Systematically restricting information inputs to isolate the exact source of alpha:
+Reproduce with `python scripts/run_all_experiments.py` (about 8 minutes on a CUDA GPU). Per-seed rows are in `artifacts/*_per_seed.csv`.
 
-| Ablation Model | Included Microstructural Features | Num Features | Out-of-Sample Macro F1 |
-|:---|:---|:---:|:---:|
-| **Model A: Spread Only** | Relative Spread | 1 | 0.1500 |
-| **Model B: Top-of-Book (L1)** | Spread + Level-1 Imbalance + Level-1 OFI + Micro-Price Dev | 4 | 0.3609 (+140% vs A) |
-| **Model C: Top 3 Levels Depth** | Model B + Level-3 Depth Imbalance + Bid/Ask Slopes | 7 | **0.5508** (+52% vs B) |
-| **Model D: Full 10-Level Book** | Full 10 Levels + MLOFI PCA + VPIN + Lagged Signals | 27 | **0.6039** (+9.6% vs C) |
-| **Model E: DeepLOB (Temporal)** | Full 10 Levels $\times 100$ snapshot temporal sequence | 4000 | 0.4106 |
+### Experiment A: Model Hierarchy (k = 20)
 
-#### Top Influential Microstructure Features (Gini Importance & SHAP)
-1. `rel_spread` (14.14% relative contribution)
-2. `imbalance_l3` (9.54% relative contribution)
-3. `slope_bid` (8.73% relative contribution)
-4. `slope_ask` (8.54% relative contribution)
-5. `imbalance_l5` (6.77% relative contribution)
-6. `ofi_lag_1` (5.71% relative contribution)
+| Tier | Model | Accuracy | Macro-F1 | Cross-Entropy |
+|:---:|:---|:---:|:---:|:---:|
+| 0 | Naïve Flat | 0.698 ± 0.013 | 0.274 ± 0.003 | 4.812 |
+| 0 | Naïve Momentum (lag k) | 0.645 ± 0.012 | 0.519 ± 0.013 | 0.961 |
+| 1 | Logistic Regression | 0.587 ± 0.011 | 0.564 ± 0.008 | 0.812 |
+| 2 | Random Forest | 0.609 ± 0.008 | 0.578 ± 0.008 | 0.757 |
+| 3 | **LightGBM** | 0.620 ± 0.014 | **0.584 ± 0.012** | **0.743** |
+| 4 | LSTM | 0.552 ± 0.049 | 0.521 ± 0.023 | 0.859 |
+| 5 | DeepLOB | 0.597 ± 0.025 | 0.559 ± 0.010 | 0.823 |
+| 5 | TLOB | 0.535 ± 0.026 | 0.492 ± 0.018 | 0.965 |
 
-> **Key Finding**: Top-of-book and the first 3 levels of depth account for **>91% of total model predictive capacity**. Processing levels 4–10 adds only ~9.6% predictive lift while dramatically increasing feature extraction and network latency.
+Accuracy is below the Naïve Flat rate for every learned model because balanced class weights trade majority-class accuracy for recall on UP/DOWN. Macro-F1 is the comparison metric. On this data, sequence models do not beat the tabular models built on hand-crafted microstructure features. The deep nets also train for at most 10 epochs, so they may be under-trained.
 
-![Experiment C Ablation Progression](artifacts/experiment_c_ablation_progression.png)
+![Experiment A](artifacts/experiment_a_model_comparison.png)
+
+### Experiment B: Signal Decay Across Horizons (LightGBM)
+
+| Horizon k | Macro-F1 | Naïve Momentum Macro-F1 | Accuracy | Test FLAT share |
+|:---:|:---:|:---:|:---:|:---:|
+| 10 | 0.521 ± 0.011 | 0.438 | 0.715 | 88.3% |
+| 20 | **0.581 ± 0.011** | 0.519 | 0.614 | 69.8% |
+| 50 | 0.534 ± 0.012 | 0.467 | 0.542 | 38.7% |
+| 100 | 0.453 ± 0.013 | 0.413 | 0.508 | 22.1% |
+
+Skill peaks at k = 20. At k = 10 most moves fall under the 1.5 bp threshold (88% FLAT), which makes UP/DOWN hard to recall. Beyond k = 20 the signal decays. The informed-flow bursts the generator plants last 15–60 events, which matches this shape.
+
+![Experiment B](artifacts/experiment_b_signal_decay.png)
+
+### Experiment C: Feature Ablation (LightGBM, k = 20)
+
+| Feature set | # Features | Macro-F1 |
+|:---|:---:|:---:|
+| A: Spread only | 1 | 0.160 ± 0.102 |
+| B: L1 snapshot (spread, L1 imbalance, L1 OFI, micro-price deviation) | 4 | 0.492 ± 0.011 |
+| C: B + lags of L1 signals | 13 | 0.541 ± 0.006 |
+| D: C + levels 2–3 (L3 imbalance, L2/L3 OFI) | 16 | 0.570 ± 0.008 |
+| E: All features (adds L4–10 depth, slopes, MLOFI PCA, VPIN) | 27 | 0.581 ± 0.011 |
+
+The spread is always one tick in this regime, so Model A carries no information. With balanced weights it collapses to a single class, and which class varies by seed (hence the large std). Short history adds +0.049 on top of the L1 snapshot, and levels 2–3 add +0.029. The rest of the book adds +0.011.
+
+**Feature attribution** (share of total LightGBM split gain on the full model, mean over seeds): `imbalance_l3` 49.3%, `vpin` 7.5%, `ofi_pca1` 6.3%, `slope_bid` 5.3%, `slope_ask` 4.9%, `imbalance_l5` 4.1%, `ofi_lag_1` 4.0%, `imbalance_l1` 3.4%. Gain importance is a model-internal measure. It is not a causal attribution, and it splits credit arbitrarily between correlated features.
+
+![Experiment C](artifacts/experiment_c_ablation_progression.png)
+
+### Experiment D: Execution and Latency
+
+The test-set signals of the trained LightGBM and DeepLOB models from Experiment A are executed over each seed's test window (8,980 events, about 89 s of simulated trading). Settings: $1M capital, 100-share lots, ±500 share inventory cap, 1.5 bp taker fee, 0.5 bp maker rebate, and 1 ms latency unless stated. Latency is applied in wall-clock time: an order reaches the book at the first snapshot whose timestamp is at least $t$ + latency.
+
+| Model | Regime | Net PnL ($) | Trades | PnL / trade ($) | Fees ($) | Slippage vs decision mid ($) |
+|:---|:---|:---:|:---:|:---:|:---:|:---:|
+| LightGBM | Academic mid-price (fantasy) | 1,858 ± 136 | 658 | 2.86 | 0 | 0 |
+| LightGBM | Aggressive taker | **457 ± 257** | 658 | 0.74 | 982 | 422 |
+| LightGBM | Passive maker (VPIN gate) | 2 ± 31 | 4 | — | −2 | 0 |
+| DeepLOB | Academic mid-price (fantasy) | 1,782 ± 142 | 797 | 2.25 | 0 | 0 |
+| DeepLOB | Aggressive taker | 104 ± 160 | 797 | 0.14 | 1,186 | 501 |
+| DeepLOB | Passive maker (VPIN gate) | 7 ± 173 | 11 | — | −5 | 0 |
+
+- Crossing the spread and paying fees removes about 75% (LightGBM) and 94% (DeepLOB) of the fantasy PnL. DeepLOB's signals flip more often, so it trades more and pays more friction.
+- The **passive maker** joins the touch and counts as filled only when the market trades *through* its price within 50 events (it assumes it sits at the back of the queue). It cancels when the signal flips or VPIN exceeds its 90th training-period percentile. Under this conservative rule almost nothing fills, and what does fill is adversely selected by construction. An earlier version assumed every passive order filled instantly at the touch, which is why it used to beat even the fantasy regime.
+- **Sharpe ratios are not reported** in these tables. Annualizing about 90 seconds of returns gives numbers in the hundreds or thousands that mean nothing. The CSVs still contain a Sharpe computed on 100 ms bars for relative comparison.
+
+**Latency sweep** (aggressive taker, added latency, net PnL mean ± std):
+
+| Added latency | LightGBM | DeepLOB |
+|:---:|:---:|:---:|
+| 0 ms | 508 ± 255 | 155 ± 156 |
+| 1 ms | 457 ± 257 | 104 ± 160 |
+| 2 ms | 454 ± 258 | 100 ± 160 |
+| 10 ms | 427 ± 267 | 71 ± 173 |
+| 25 ms | 369 ± 265 | 14 ± 181 |
+| 100 ms | 119 ± 278 | −247 ± 210 |
+
+**Measured single-sample inference latency** (median, Python): LightGBM booster **0.14 ms** (CPU), DeepLOB **2.4 ms** (CUDA, batch of 1).
+
+Interpretation: both models lose about the same amount per millisecond of latency (≈$390–400 from 0 to 100 ms). LightGBM's advantage over DeepLOB is already present at zero latency, so it comes from better signals, not faster inference. At the measured latencies, DeepLOB's extra ~2.3 ms costs about $10 (≈$109 at 0.14 ms vs ≈$99 at 2.4 ms), which is small next to the ~$350 signal-quality gap. The drop from 0 to 0.05 ms for both models is a discretization effect: at zero latency the order fills against the very snapshot the decision was made on, while any positive latency means the next event. In seed 0 DeepLOB edges out LightGBM. The seed-to-seed spread in PnL is large compared with the means, so treat the absolute numbers as indicative.
+
+![Experiment D Equity](artifacts/experiment_d_equity_curves.png)
+![Experiment D Latency](artifacts/experiment_d_latency_vs_profit.png)
 
 ---
 
-### Experiment D: Economic Reality & Latency vs Net Profitability
+## C++20 Latency Benchmark
 
-Simulating the full trade lifecycle under real market frictions ($1,000,000 initial capital):
+[main_benchmark.cpp](cpp/src/main_benchmark.cpp) times feature extraction plus tree-ensemble inference plus a simulated order on 100,000 snapshots from a random-walk book.
 
-| Execution Regime | Net Realized PnL ($) | Total Return (%) | Annualized Sharpe | Max Drawdown (%) | Total Fees Paid ($) | Slippage Paid ($) |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Academic Mid-Price (Fantasy)** | $908.00 | +0.0908% | 460.38 | 0.0024% | $0.00 | $0.00 |
-| **Realistic Aggressive Taker** | $366.88 | +0.0367% | 168.67 | 0.0163% | $384.28 | $154.26 |
-| **Dynamic Passive Maker (VPIN)** | **$1,096.00** | **+0.1096%** | **556.89** | **0.0028%** | **-$118.28** *(Rebates Earned!)* | **$0.00** |
+**Scope.** The ensemble is **randomly generated** (50 trees × 3 classes, depth 6, 10 real features plus 6 zero inputs). It is not the trained LightGBM model, and C++ features are not checked against the Python pipeline. The numbers measure the cost of evaluating a tree ensemble of that size. They are not the latency of the model evaluated above, and they do not include network or market-data parsing ("wire-to-order").
 
-#### The Latency vs Profitability Tradeoff
-Evaluating whether an ultra-low latency model (LightGBM in C++) beats a deep learning model (DeepLOB on GPU) due to signal decay:
+Latest run ([artifacts/cpp_latency_benchmarks.csv](artifacts/cpp_latency_benchmarks.csv), GCC 15.2, `-O3 -march=native`):
 
-| Pipeline Latency | LightGBM (C++ Engine) Net Sharpe | DeepLOB (Deep CNN) Net Sharpe | Economic Winner |
-|:---:|:---:|:---:|:---:|
-| **0.05 ms (50 $\mu$s)** | **168.67** | 148.17 | **LightGBM (+13.8% Sharpe)** |
-| **0.50 ms** | **168.67** | 148.17 | **LightGBM** |
-| **2.00 ms** | **168.67** | 148.17 | **LightGBM** |
-| **10.00 ms** | **163.47** | 143.48 | **LightGBM** |
-| **25.00 ms (Deep Net Inference)** | **148.17** | 135.66 | **LightGBM** |
-| **50.00 ms** | **128.70** | 117.72 | **LightGBM** |
-| **100.00 ms** | **100.66** | 89.36 | **LightGBM** |
+| Stage | P50 | P99 |
+|:---|:---:|:---:|
+| Feature extraction | below timer resolution | 0.2 µs |
+| Tree inference | 1.8 µs | 6.1 µs |
+| End-to-end loop | 1.9 µs | 6.3 µs (P99.9 15.1 µs) |
 
-> **Crucial Thesis Validation**: Although DeepLOB achieves slightly higher raw accuracy under theoretical conditions, **LightGBM in C++ outperforms DeepLOB across all latency regimes**. In real-world market execution where signals decay in milliseconds, speed dominates mathematical complexity.
-
-![Experiment D Equity Curves](artifacts/experiment_d_equity_curves.png)
-![Experiment D Latency vs Profitability](artifacts/experiment_d_latency_vs_profit.png)
-
----
-
-## Ultra-Low-Latency Systems Engineering (C++20)
-
-To achieve production-grade HFT performance, feature extraction and decision-tree inference were implemented in modern C++20 with SIMD-vectorized operations:
-- **Cache-Aligned Memory**: Fixed-size `std::array<Level, 10>` structures aligned to 64-byte CPU cache lines (`alignas(64)`), completely eliminating heap allocations on hot paths.
-- **SIMD OFI/MLOFI Vectorization**: Unrolled loops (`#pragma GCC unroll 10`) enabling AVX vector instructions across all 10 price levels simultaneously.
-- **Native Flat Tree Inference**: LightGBM tree ensembles compiled directly into flat contiguous node arrays (`FastGBDTEnsemble`), evaluating multi-class tree models in sub-microsecond time.
-
-### C++ Microbenchmark Profiling (100,000 Live Events)
-```
-================ LATENCY BENCHMARK RESULTS ================
-Throughput:             459,211.46 messages/second
-Total Events Processed: 100,000
-Total Wall Clock Time:  0.218 seconds
-
---- Stage Latency Breakdown ---
-SIMD Feature Extraction: P50 = 0.000 us | P99 = 0.200 us
-Fast Tree Inference:     P50 = 1.600 us | P99 = 5.300 us
-
---- End-to-End Pipeline Latency (Wire-to-Order) ---
-P50  (Median): 1.700 microseconds
-P90:           4.100 microseconds
-P99:           5.500 microseconds
-P99.9 (Tail):  12.900 microseconds
-===========================================================
-```
+Throughput: about 399k snapshots/s, including timing overhead. The [tutorial](cpp/tutorial/) and [optimization_comparison.cpp](cpp/src/optimization_comparison.cpp) compare AoS vs SoA layouts and branchless tree evaluation on the same kind of synthetic ensemble.
 
 ---
 
@@ -272,94 +236,49 @@ P99.9 (Tail):  12.900 microseconds
 
 ```
 ML_Project_2026/
-├── README.md                               # Institutional research paper & documentation
-├── project_research.md                     # Foundational research specification
-├── requirements.txt                        # Python dependencies
-├── setup.py                                # Package configuration (lob_alpha)
-├── cpp/                                    # Low-Latency C++ Engine (C++20)
-│   ├── CMakeLists.txt                      # CMake build script
-│   ├── include/
-│   │   ├── lob.hpp                         # Cache-aligned LimitOrderBook data structure
-│   │   ├── features.hpp                    # SIMD OFI, MLOFI, VPIN & Micro-Price
-│   │   ├── tree_engine.hpp                 # Fast native Decision Tree evaluation engine
-│   │   └── simulator.hpp                   # Microsecond continuous matching simulator
-│   └── src/
-│       └── main_benchmark.cpp              # Latency percentile microbenchmark (P50/P99)
-├── src/                                    # Python Core Framework
-│   ├── config.py                           # System configuration, fees, horizons, paths
-│   ├── data/                               # Data Parsers & Synthetics
-│   │   ├── lob_dataset.py                  # PyTorch Datasets & chronological loaders
-│   │   ├── normalizers.py                  # Decimal, causal rolling Z, Bilinear Norm (BiN)
-│   │   ├── fi2010_loader.py                # Academic benchmark parser (FI-2010)
-│   │   ├── lobster_loader.py               # NASDAQ LOBSTER reconstructor
-│   │   ├── crypto_loader.py                # 24/7 Cryptocurrency LOB parser
-│   │   └── synthetic_generator.py          # Microstructure-grounded double auction generator
-│   ├── microstructure/                     # Feature Engineering
-│   │   ├── ofi.py                          # Cont et al. Level-1 OFI and MLOFI with PCA
-│   │   ├── vpin.py                         # Volume-clock VPIN toxicity engine
-│   │   ├── microprice.py                   # Stoikov Micro-price & book slope geometry
-│   │   └── pipeline.py                     # Unified multi-modal feature pipeline
-│   ├── models/                             # ML Progression Hierarchy
-│   │   ├── baselines.py                    # Tier 0 (Momentum/Flat), Tier 1 (Logistic)
-│   │   ├── tabular_trees.py                # Tier 2 (Random Forest), Tier 3 (LightGBM)
-│   │   ├── recurrent.py                    # Tier 4 (LSTM / GRU)
-│   │   ├── deeplob.py                      # Tier 5 (DeepLOB: 1D Conv + Inception + LSTM)
-│   │   ├── tlob.py                         # Tier 5 (TLOB: Dual Attention Transformer + BiN)
-│   │   └── registry.py                     # Factory & unified training engine
-│   ├── execution/                          # High-Fidelity Simulator
-│   │   ├── simulator.py                    # Double-auction matching, spread, depth walking
-│   │   ├── strategies.py                   # Academic vs Realistic Taker vs Dynamic Maker
-│   │   └── metrics.py                      # Sharpe, Sortino, MaxDD, Win Rate, Fill Rate
-│   ├── experiments/                        # Scientific Modules
-│   │   ├── exp_a_predictive_power.py       # Experiment A: Model Hierarchy benchmark
-│   │   ├── exp_b_signal_survival.py        # Experiment B: Multi-horizon decay mapping
-│   │   ├── exp_c_ablation_attribution.py   # Experiment C: Depth ablation & SHAP
-│   │   └── exp_d_latency_vs_profit.py      # Experiment D: Execution & Latency tradeoff
-│   └── utils/                              # Metrics & Plots
-│       ├── metrics.py                      # Multi-class precision, recall, F1, cross-entropy
-│       └── visualization.py                # Publication-quality plotting suite
-├── scripts/                                # Executable CLIs
-│   ├── run_all_experiments.py              # Master pipeline orchestrator
-│   └── download_or_generate_data.py        # Data generator CLI
-├── tests/                                  # Automated Test Suite (PyTest)
-│   ├── test_features.py                    # Feature calculation unit tests
-│   ├── test_models.py                      # ML model forward/backward unit tests
-│   └── test_simulator.py                   # Simulator & adverse selection unit tests
-└── artifacts/                              # Generated research figures & CSV benchmarks
+├── README.md
+├── cpp/                                    # C++20 latency benchmark & SIMD tutorial
+├── src/
+│   ├── config.py
+│   ├── data/
+│   │   ├── synthetic_generator.py          # Simulated LOB, trade tape, timestamps, labels
+│   │   ├── lob_dataset.py                  # Purged splits, indexed sequence loaders
+│   │   ├── normalizers.py                  # Decimal, causal rolling z, BiN
+│   │   ├── purged_cv.py                    # Purged & embargoed CV
+│   │   └── fi2010_loader.py / lobster_loader.py / crypto_loader.py
+│   ├── microstructure/                     # OFI, VPIN, micro-price, feature pipeline
+│   ├── models/                             # Baselines, RF, LightGBM, LSTM, DeepLOB, TLOB, trainer
+│   ├── execution/                          # Simulator, strategies, performance metrics
+│   ├── experiments/
+│   │   ├── common.py                       # Shared data preparation (train-only fit, purged splits)
+│   │   └── exp_a ... exp_d                 # Experiments A-D
+│   └── utils/                              # Metrics, validation checks, plots
+├── scripts/
+│   ├── run_all_experiments.py              # Multi-seed runner (aggregated + per-seed artifacts)
+│   ├── verify_robustness_and_leakage.py    # Validation report
+│   ├── build_and_execute_notebook.py       # Builds and runs the submission notebook
+│   └── download_or_generate_data.py
+├── submission/                             # Executed notebook + submission.csv
+├── tests/
+└── artifacts/                              # CSVs and figures
 ```
 
 ---
 
-## Installation & Quickstart Guide
+## Installation & Quickstart
 
-### 1. Prerequisites
-- Python 3.10+ (Tested on Python 3.12 with PyTorch 2.6.0 CUDA & LightGBM 4.6.0)
-- GCC with C++20 support (e.g., MinGW-w64 GCC 15.2 or Clang/MSVC)
-- CMake 3.20+ (optional)
-
-### 2. Environment Setup
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/ML_Project_2026.git
-cd ML_Project_2026
-
-# Install dependencies and package in editable mode
 pip install -r requirements.txt
 pip install -e .
-```
 
-### 3. Run All Research Experiments
-To execute the complete research suite (Experiments A, B, C, D and the C++ engine):
-```bash
-python scripts/run_all_experiments.py --events 25000 --epochs 5 --horizon 20
-```
+# All experiments, 5 seeds (add --run-cpp to also build and run the C++ benchmark)
+python scripts/run_all_experiments.py --seeds 0 1 2 3 4 --events 60000 --epochs 10
 
-### 4. Build and Run the C++ Low-Latency Benchmark
-```bash
-# Compile with high optimization and native SIMD
+# Validation report
+python scripts/verify_robustness_and_leakage.py --seed 42 --events 60000
+
+# C++ benchmark on its own
 g++ -std=c++20 -O3 -march=native -ffast-math -I cpp/include cpp/src/main_benchmark.cpp -o cpp/lob_benchmark.exe
-
-# Execute benchmark
 ./cpp/lob_benchmark.exe
 ```
 
@@ -367,36 +286,40 @@ g++ -std=c++20 -O3 -march=native -ffast-math -I cpp/include cpp/src/main_benchma
 
 ## Automated Test Suite
 
-The automated test suite tests feature formulas, deep network forward passes, Bilinear Normalization gradient flow, spread crossing penalties, multi-level book walking, and VPIN adverse selection triggers:
-
 ```bash
 python -m pytest tests -v
 ```
 
-Expected output:
-```
-tests/test_features.py::test_ofi_exact_formula PASSED                    [  8%]
-tests/test_features.py::test_microprice_and_imbalance PASSED             [ 16%]
-tests/test_features.py::test_vpin_calculation PASSED                     [ 25%]
-tests/test_features.py::test_bilinear_normalization PASSED               [ 33%]
-tests/test_models.py::test_baselines_shapes PASSED                       [ 41%]
-tests/test_models.py::test_tabular_tree_models PASSED                    [ 50%]
-tests/test_models.py::test_deeplob_forward PASSED                        [ 58%]
-tests/test_models.py::test_tlob_forward PASSED                           [ 66%]
-tests/test_models.py::test_recurrent_models PASSED                       [ 75%]
-tests/test_simulator.py::test_spread_crossing_aggressive PASSED          [ 83%]
-tests/test_simulator.py::test_walking_the_book_slippage PASSED           [ 91%]
-tests/test_simulator.py::test_passive_adverse_selection PASSED           [100%]
-======================= 12 passed in 2.58s ========================
-```
+20 tests cover:
+- feature formulas (OFI, micro-price, VPIN, BiN);
+- the pipeline fitting only on training rows, real VPIN, and the integer tick spread;
+- the purge gap;
+- the momentum baseline using only realized labels;
+- model forward passes;
+- spread crossing and book walking;
+- trade-through passive fills;
+- timestamp-based latency;
+- time-bar Sharpe;
+- purged CV and the permutation check.
+
+---
+
+## Known Limitations
+
+- **Synthetic data only.** Conclusions are about this generator. Validating on FI-2010 or LOBSTER data is the obvious next step.
+- **Short test windows.** About 90 s of trading per seed means PnL is noisy and annualized risk metrics are not meaningful.
+- **Simple strategy.** One lot per signal up to a ±500 inventory cap, with no position sizing by confidence and no exit logic.
+- **Simple book impact.** The book does not react to our own orders beyond walking the snapshot.
+- **Limited tuning.** Deep models get at most 10 epochs and little hyperparameter search.
+- **Separate C++ path.** The C++ benchmark runs a random ensemble, not the trained model.
 
 ---
 
 ## References
 
 1. **Cont, R., Kukanov, A., & Stoikov, S. (2014).** *The Price Impact of Order Book Events.* Journal of Financial Econometrics, 12(1), 47–88.
-2. **Easley, D., Lopez de Prado, M. M., & O'Hara, M. (2012).** *Flow Toxicity and Liquidity in a High-Frequency World.* The Review of Financial Studies, 25(5), 1457–1493.
+2. **Easley, D., López de Prado, M. M., & O'Hara, M. (2012).** *Flow Toxicity and Liquidity in a High-Frequency World.* The Review of Financial Studies, 25(5), 1457–1493.
 3. **Stoikov, S. (2018).** *The Micro-Price: A High-Frequency Estimator of Future Prices.* Quantitative Finance, 18(12), 1959–1966.
 4. **Zhang, Z., Zohren, S., & Roberts, S. (2019).** *DeepLOB: Deep Convolutional Neural Networks for Limit Order Books.* IEEE Transactions on Signal Processing, 67(11), 3001–3012.
-5. **Tran, D. T., Iosifidis, A., Kanniainen, J., & Gabbouj, M. (2020).** *Data Normalization for Bilinear Structures in High-Frequency Financial Time-series.* IEEE Transactions on Neural Networks and Learning Systems.
-6. **Berti, L., et al. (2024).** *TLOB: A Novel Transformer Model with Dual Attention for Price Trend Prediction with Limit Order Book Data.* arXiv preprint.
+5. **López de Prado, M. (2018).** *Advances in Financial Machine Learning.* Wiley.
+6. **Tran, D. T., Kanniainen, J., Gabbouj, M., & Iosifidis, A. (2021).** *Data Normalization for Bilinear Structures in High-Frequency Financial Time-Series.* ICPR 2020.

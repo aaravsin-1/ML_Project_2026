@@ -8,35 +8,38 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import argparse
 import numpy as np
 import pandas as pd
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
 
 from src.config import ARTIFACTS_DIR
-from src.data.synthetic_generator import SyntheticLOBGenerator
-from src.data.lob_dataset import temporal_train_val_test_split
-from src.microstructure.pipeline import MicrostructureFeaturePipeline
+from src.experiments.common import generate_session, prepare_data
+from src.models.baselines import NaiveMomentumBaseline
 from src.models.tabular_trees import LightGBMLOB
 from src.utils.validation_checks import OverfittingDiagnostics
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--events", type=int, default=30000)
+    args = parser.parse_args()
+    k = 20
+
     print("================================================================================")
     print("     QUANTITATIVE VALIDATION SUITE: OVERFITTING, PURGED CV & LEAKAGE AUDIT      ")
     print("================================================================================")
 
-    # 1. Generate Datasets
-    print("\n[+] 1. Generating Primary Market Session (Large-Tick Asset, 30,000 events)...")
-    gen_large = SyntheticLOBGenerator(base_price=100.0, tick_size=0.01, regime="large_tick", seed=42)
-    lob_large, labels_large, trades_large = gen_large.generate_session(n_events=30000)
-    y_large = labels_large[20]
-
-    pipeline = MicrostructureFeaturePipeline(num_levels=10, pca_components=3)
-    X_large, _, feat_names = pipeline.fit_transform(lob_large, trades_df=trades_large)
-
-    splits_x, splits_y = temporal_train_val_test_split(X_large, y_large, 0.70, 0.15, 0.15)
-    X_tr, y_tr = splits_x["train"], splits_y["train"]
-    X_va, y_va = splits_x["val"], splits_y["val"]
-    X_te, y_te = splits_x["test"], splits_y["test"]
+    print(f"\n[+] 1. Generating large-tick session (seed {args.seed}, {args.events} events)...")
+    data = prepare_data(generate_session(args.seed, args.events))
+    y_large = data.labels(k)
+    X_large = data.tab_feat
+    idx = data.splits(k)
+    X_tr, y_tr = X_large[idx["train"]], y_large[idx["train"]]
+    X_va, y_va = X_large[idx["val"]], y_large[idx["val"]]
+    X_te, y_te = X_large[idx["test"]], y_large[idx["test"]]
+    pipeline = data.pipeline
 
     # 2. Train Model and Audit Generalization Gap
     print("\n[+] 2. Auditing Generalization Gap (Train vs Validation vs Test)...")
@@ -66,24 +69,30 @@ def main():
         df_purged_cv["test_mcc"].mean(), df_purged_cv["test_mcc"].std()
     ))
 
-    # 4. Target Permutation Reality Check
-    print("\n[+] 4. Executing Target Permutation Reality Check (White's Test for Lookahead Leakage)...")
+    # 4. Target Permutation Check. This only catches label/feature misalignment bugs (e.g. labels leaking into features
+    # by row position); it cannot detect features that peek at future prices, because
+    # shuffling the targets breaks that link too.
+    print("\n[+] 4. Executing Target Permutation Check (label-alignment sanity check)...")
     perm_diag = OverfittingDiagnostics.run_permutation_reality_check(
         LightGBMLOB, X_tr, y_tr, X_te, y_te, n_permutations=5
     )
     print("    Permuted Targets Macro-F1: {:.4f} (Expected: ~0.333)".format(perm_diag["permuted_macro_f1"]))
     print("    Permuted Targets MCC:      {:.4f} (Expected: ~0.000)".format(perm_diag["permuted_mcc"]))
-    print("    Leakage Detection Status:  {}".format("DETECTED LEAKAGE!" if perm_diag["leakage_detected"] else "PASS (Zero Leakage Verified)"))
+    print("    Status: {}".format("FAIL" if perm_diag["leakage_detected"] else "PASS (no label-alignment leak)"))
+
+    # 4b. Honest-baseline comparison: lift over the last realized k-event move
+    mom_f1 = f1_score(y_te, NaiveMomentumBaseline(k).predict(y_large, idx["test"]), average="macro", zero_division=0)
+    print("    Naïve momentum (lag k) Macro-F1: {:.4f} vs LightGBM {:.4f}".format(mom_f1, gap_diag["test_macro_f1"]))
 
     # 5. Out-of-Distribution Cross-Regime Generalization
     print("\n[+] 5. Cross-Regime Generalization Test (Trained on Large-Tick -> Evaluated on Small-Tick)...")
-    gen_small = SyntheticLOBGenerator(base_price=100.0, tick_size=0.01, regime="small_tick", seed=777)
-    lob_small, labels_small, trades_small = gen_small.generate_session(n_events=15000)
-    y_small = labels_small[20]
-    X_small, _ = pipeline.transform(lob_small, trades_df=trades_small)
+    small = generate_session(777, 15000, regime="small_tick")
+    valid = np.arange(len(small.lob_40) - k)  # last k labels are undefined
+    y_small = small.labels_dict[k][valid]
+    X_small, _ = pipeline.transform(small.lob_40, small.trades_df, small.timestamps_ms)
+    X_small = X_small[valid]
 
     preds_small = model.predict(X_small)
-    from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
     acc_cross = accuracy_score(y_small, preds_small)
     f1_cross = f1_score(y_small, preds_small, average="macro", zero_division=0)
     mcc_cross = matthews_corrcoef(y_small, preds_small)
@@ -92,41 +101,26 @@ def main():
     print("    Small-Tick Regime Out-of-Sample Macro-F1: {:.4f}".format(f1_cross))
     print("    Small-Tick Regime Out-of-Sample MCC:      {:.4f}".format(mcc_cross))
 
-    # 6. Save Report
+    # 6. Save Report: status is computed from the values, not hard-coded
+    cv_f1 = df_purged_cv["test_macro_f1"]
+    cv_mcc = df_purged_cv["test_mcc"]
+    checks = [
+        ("Generalization Gap (F1 Train - Test)", gap_diag["f1_gap"], gap_diag["f1_gap"] < 0.25, "< 0.25"),
+        ("Test Matthews Correlation Coef (MCC)", gap_diag["test_mcc"], gap_diag["test_mcc"] > 0.0, "> 0"),
+        ("Test Cohen's Kappa", gap_diag["test_kappa"], gap_diag["test_kappa"] > 0.0, "> 0"),
+        ("Test Macro-F1 lift over naive momentum (lag k)", gap_diag["test_macro_f1"] - mom_f1, gap_diag["test_macro_f1"] > mom_f1, "> 0"),
+        ("Purged CV Mean Macro-F1", float(cv_f1.mean()), float(cv_f1.std()) < 0.05, "fold std < 0.05"),
+        ("Purged CV Min MCC", float(cv_mcc.min()), float(cv_mcc.min()) > 0.0, "every fold > 0"),
+        ("Permutation Check Macro-F1", perm_diag["permuted_macro_f1"], perm_diag["permuted_macro_f1"] <= 0.45, "<= 0.45"),
+        ("Permutation Check MCC", perm_diag["permuted_mcc"], abs(perm_diag["permuted_mcc"]) <= 0.10, "|MCC| <= 0.10"),
+        ("Cross-Regime Small-Tick Transfer Macro-F1", float(f1_cross), float(mcc_cross) > 0.0, "MCC > 0"),
+        ("Cross-Regime Small-Tick Transfer MCC", float(mcc_cross), float(mcc_cross) > 0.0, "> 0"),
+    ]
     summary_report = {
-        "check": [
-            "Generalization Gap (F1 Train - Test)",
-            "Test Matthews Correlation Coef (MCC)",
-            "Test Cohen's Kappa",
-            "Purged Cross-Validation Mean F1",
-            "Purged Cross-Validation Mean MCC",
-            "Permutation Reality Check F1",
-            "Permutation Reality Check MCC",
-            "Cross-Regime Small-Tick Transfer F1",
-            "Cross-Regime Small-Tick Transfer MCC"
-        ],
-        "value": [
-            gap_diag["f1_gap"],
-            gap_diag["test_mcc"],
-            gap_diag["test_kappa"],
-            float(df_purged_cv["test_macro_f1"].mean()),
-            float(df_purged_cv["test_mcc"].mean()),
-            perm_diag["permuted_macro_f1"],
-            perm_diag["permuted_mcc"],
-            float(f1_cross),
-            float(mcc_cross)
-        ],
-        "status": [
-            "PASS (< 0.25)",
-            "PASS (> 0.25)",
-            "PASS (> 0.25)",
-            "PASS (Stable across folds)",
-            "PASS (Positive across folds)",
-            "PASS (Collapsed to random chance ~0.33)",
-            "PASS (Collapsed to 0.00)",
-            "PASS (Survives regime shift)",
-            "PASS (Positive transfer)"
-        ]
+        "check": [c[0] for c in checks],
+        "value": [c[1] for c in checks],
+        "criterion": [c[3] for c in checks],
+        "status": ["PASS" if c[2] else "FAIL" for c in checks],
     }
     df_summary = pd.DataFrame(summary_report)
     csv_out = ARTIFACTS_DIR / "overfitting_verification_report.csv"

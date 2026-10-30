@@ -26,15 +26,21 @@ class FI2010Loader:
         if not file_path.exists():
             raise FileNotFoundError(f"FI-2010 file not found at: {file_path}")
 
-        # Load file (typically space-separated or comma-separated)
-        data = np.loadtxt(file_path)
+        # Files are ~100-600 MB of whitespace-separated text; cache a binary copy.
+        cache_path = file_path.with_suffix(".npy")
+        if cache_path.exists():
+            data = np.load(cache_path)
+        else:
+            data = pd.read_csv(file_path, sep=r"\s+", header=None, dtype=np.float64).to_numpy()
+            np.save(cache_path, data)
         # FI-2010 raw files are typically formatted with 149 rows and N columns
         if data.shape[0] == 149:
             data = data.T  # Transpose to (N_events, 149)
         elif data.shape[1] != 149 and data.shape[0] != 149:
             raise ValueError(f"Unexpected shape for FI-2010 data: {data.shape}, expected 149 features/labels")
 
-        # 40 LOB features (first 10 levels)
+        # 40 LOB features (first 10 levels); the remaining 104 hand-crafted features are
+        # returned via parse_file_with_extras.
         lob_features = data[:, :40].astype(np.float32)
 
         # Labels for horizons k = [10, 20, 30, 50, 100] located at columns 144:149
@@ -49,6 +55,15 @@ class FI2010Loader:
             labels_by_horizon[k] = mapped_labels
 
         return lob_features, labels_by_horizon
+
+    @staticmethod
+    def parse_file_with_extras(file_path: Union[str, Path]) -> Tuple[np.ndarray, np.ndarray, Dict[int, np.ndarray]]:
+        """Like parse_file, but also returns the 104 hand-crafted FI-2010 features (rows 40:144)."""
+        lob_features, labels = FI2010Loader.parse_file(file_path)
+        data = np.load(Path(file_path).with_suffix(".npy"))
+        if data.shape[0] == 149:
+            data = data.T
+        return lob_features, data[:, 40:144].astype(np.float32), labels
 
     @staticmethod
     def extract_level_arrays(lob_40: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:

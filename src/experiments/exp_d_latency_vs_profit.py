@@ -1,200 +1,156 @@
-"""Experiment D: Economic Reality - High-Fidelity Execution and Latency vs Profitability.
+"""Experiment D: Economic Reality - Execution Frictions and Latency vs Profitability.
 
-Validates the economic viability of ML alpha under continuous double-auction mechanics:
-1. Contrasts Academic Fantasy Mid-Price fills vs Realistic Spread Crossing & Fees vs Dynamic Passive Maker with VPIN Defense.
-2. Latency Sensitivity Analysis: Evaluates whether a sub-millisecond C++ LightGBM pipeline
-   economically outperforms a computationally heavier DeepLOB / TLOB model due to alpha decay.
+1. Runs the real LightGBM and DeepLOB test-set signals (from Experiment A) through three
+   execution regimes: fantasy mid-price fills, an aggressive taker that crosses the spread
+   and walks the book, and a passive maker that joins the touch, fills only under a
+   conservative trade-through rule, and stands down when VPIN is high.
+2. Sweeps added latency (in wall-clock ms against snapshot timestamps) for both models'
+   own signals, and measures each model's single-sample inference latency.
+
+Lot size, fees and the latency grid come from the session (synthetic vs Coinbase BTC).
+Sharpe is computed on 100 ms bars and annualized; short test windows make it noisy, so
+compare it across regimes and models rather than reading it as an absolute number.
 """
 
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+import time
+from typing import Any, Dict, Tuple
 import numpy as np
 import pandas as pd
+import torch
 
-from src.config import ARTIFACTS_DIR, CONFIG
-from src.data.synthetic_generator import SyntheticLOBGenerator
-from src.data.lob_dataset import temporal_train_val_test_split
-from src.microstructure.pipeline import MicrostructureFeaturePipeline
-from src.models.tabular_trees import LightGBMLOB
+from src.config import ARTIFACTS_DIR
+from src.experiments.common import PreparedData, SEQ_LEN, load_prepared
 from src.execution.simulator import ExecutionSimulator
 from src.execution.strategies import MicrostructureStrategyRunner
 from src.execution.metrics import PerformanceMetrics
 from src.utils.visualization import plot_execution_equity_curves, plot_latency_vs_profitability
 
+BAR_MS = 100.0
+VPIN_TOXIC_QUANTILE = 0.90
+
+
+def measure_inference_latency_ms(exp_a_outputs: Dict[str, Any], data: PreparedData, n_calls: int = 300) -> Dict[str, float]:
+    """Median single-sample inference latency of the trained Python models."""
+    test_idx = exp_a_outputs["test_idx"]
+    # Call the raw booster: the sklearn wrapper adds input validation (and a warning per
+    # call) that is not part of model inference.
+    lgb_booster = exp_a_outputs["lgb_model"].model.booster_
+    X = data.tab_feat
+    rows = test_idx[:n_calls]
+
+    t_lgb = []
+    for i in rows:
+        t0 = time.perf_counter()
+        lgb_booster.predict(X[i:i + 1], num_iteration=exp_a_outputs["lgb_model"].model.best_iteration_)
+        t_lgb.append(time.perf_counter() - t0)
+
+    trainer = exp_a_outputs["deeplob_trainer"]
+    model, device = trainer.model, trainer.device
+    model.eval()
+    deep = torch.tensor(data.deep_feat, dtype=torch.float32, device=device)
+    t_dl = []
+    with torch.no_grad():
+        for i in rows:
+            x = deep[i - SEQ_LEN + 1:i + 1].unsqueeze(0).unsqueeze(0)
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            t0 = time.perf_counter()
+            model(x).argmax(dim=-1).item()  # .item() forces the result back to the host
+            t_dl.append(time.perf_counter() - t0)
+
+    return {"lightgbm_python_ms": 1000 * float(np.median(t_lgb)), "deeplob_ms": 1000 * float(np.median(t_dl)),
+            "deeplob_device": device.type}
+
 
 def run_experiment_d(
-    lob_40: Optional[np.ndarray] = None,
-    labels: Optional[np.ndarray] = None,
-    trades_df: Optional[pd.DataFrame] = None,
-    horizon_k: int = 20,
-    n_synthetic_events: int = 35000,
+    data: PreparedData,
+    exp_a_outputs: Dict[str, Any],
     save_artifacts: bool = True
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Executes Experiment D: Execution Simulation & Latency Benchmark."""
+) -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+    """Executes Experiment D: Execution Simulation & Latency Sweep."""
     print("\n=======================================================")
     print("   EXPERIMENT D: ECONOMIC REALITY & LATENCY PROFIT     ")
     print("=======================================================")
-
-    if lob_40 is None or labels is None:
-        print(f"[+] Generating {n_synthetic_events} high-frequency market events...")
-        gen = SyntheticLOBGenerator(base_price=100.0, tick_size=0.01, regime="large_tick", seed=42)
-        lob_40, labels_dict, trades_df = gen.generate_session(n_events=n_synthetic_events)
-        target_labels = labels_dict[horizon_k]
-    else:
-        target_labels = labels
-
-    print("[+] Extracting pipeline features and VPIN toxicity...")
-    pipeline = MicrostructureFeaturePipeline(num_levels=10, pca_components=3)
-    tab_feat, _, feat_names = pipeline.fit_transform(lob_40, trades_df=trades_df)
-
-    vpin_idx = feat_names.index("vpin")
-    vpin_series = tab_feat[:, vpin_idx]
-
-    # Split into 70% train / 15% val / 15% test
-    splits_x, splits_y = temporal_train_val_test_split(tab_feat, target_labels, 0.70, 0.15, 0.15)
-    splits_lob, _ = temporal_train_val_test_split(lob_40, target_labels, 0.70, 0.15, 0.15)
-    splits_vpin, _ = temporal_train_val_test_split(vpin_series, target_labels, 0.70, 0.15, 0.15)
-
-    X_train, y_train = splits_x["train"], splits_y["train"]
-    X_val, y_val = splits_x["val"], splits_y["val"]
-    X_test, y_test = splits_x["test"], splits_y["test"]
-    test_lob = splits_lob["test"]
-    test_vpin = splits_vpin["test"]
+    seed = data.session.seed
+    test_idx = exp_a_outputs["test_idx"]
+    test_lob = data.session.lob_40[test_idx]
+    test_ts = data.session.timestamps_ms[test_idx]
     test_mid = (test_lob[:, 0] + test_lob[:, 2]) / 2.0
 
-    print("[+] Training Production LightGBM Model for execution testing...")
-    model = LightGBMLOB(num_leaves=63, max_depth=8, learning_rate=0.05, n_estimators=200)
-    model.fit(X_train, y_train, X_val, y_val, early_stopping_rounds=15)
-    signals = model.predict(X_test)
+    vpin = data.tab_feat[:, data.feat_names.index("vpin")]
+    vpin_thresh = float(np.quantile(vpin[:data.train_end], VPIN_TOXIC_QUANTILE))
+    test_vpin = vpin[test_idx]
+    print(f"[+] Test window: {len(test_idx)} events, {(test_ts[-1] - test_ts[0]) / 1000:.1f} s | VPIN toxic threshold (train q{VPIN_TOXIC_QUANTILE:.2f}) = {vpin_thresh:.3f}")
 
-    # ---------------------------------------------------------
-    # Part 1: Realistic Friction Comparison
-    # ---------------------------------------------------------
-    print("\n[+] Simulating Execution Regimes under Microstructure Constraints...")
-    sim = ExecutionSimulator(
-        initial_cash=1000000.0,
-        maker_fee_bps=-0.5,    # -0.5 bps maker rebate
-        taker_fee_bps=1.5,     # 1.5 bps taker fee
-        latency_ticks=1,
-        lot_size=100.0,
-        max_inventory=500.0
-    )
-    runner = MicrostructureStrategyRunner(sim)
+    signals = {"LightGBM": exp_a_outputs["lgb_preds"], "DeepLOB": exp_a_outputs["deeplob_preds"]}
+    ex = data.session.exec_params
 
-    # Mode 1: Academic Fantasy Mid-Price
-    res_academic = runner.run_academic_midprice(signals, test_mid)
-    perf_academic = PerformanceMetrics.calculate_metrics(res_academic["equity"], initial_capital=1000000.0)
+    def make_sim(latency_ms: float) -> ExecutionSimulator:
+        return ExecutionSimulator(
+            initial_cash=ex["initial_cash"], maker_fee_bps=ex["maker_fee_bps"], taker_fee_bps=ex["taker_fee_bps"],
+            lot_size=ex["lot_size"], max_inventory=ex["max_inventory"], latency_ms=latency_ms, timestamps_ms=test_ts
+        )
 
-    # Mode 2: Realistic Aggressive Taker
-    res_realistic = runner.run_realistic_aggressive(signals, test_lob)
-    perf_realistic = PerformanceMetrics.calculate_metrics(res_realistic["equity"], initial_capital=1000000.0)
+    def metrics(res: Dict[str, Any]) -> Dict[str, float]:
+        return PerformanceMetrics.calculate_metrics(res["equity"], ex["initial_cash"], timestamps_ms=test_ts, bar_ms=BAR_MS)
 
-    # Mode 3: Dynamic Passive Maker with VPIN Defense
-    res_passive = runner.run_dynamic_passive_vpin(signals, test_lob, test_vpin, toxic_vpin_thresh=0.65)
-    perf_passive = PerformanceMetrics.calculate_metrics(res_passive["equity"], initial_capital=1000000.0)
-
-    strategy_comparison = [
-        {
-            "Strategy": "Academic Mid-Price (Fantasy)",
-            "Net PnL ($)": perf_academic["net_pnl"],
-            "Return (%)": perf_academic["total_return_pct"],
-            "Sharpe Ratio": perf_academic["sharpe_ratio"],
-            "Max DD (%)": perf_academic["max_drawdown_pct"],
-            "Total Fees ($)": 0.0,
-            "Slippage ($)": 0.0,
-        },
-        {
-            "Strategy": "Realistic Aggressive Taker",
-            "Net PnL ($)": perf_realistic["net_pnl"],
-            "Return (%)": perf_realistic["total_return_pct"],
-            "Sharpe Ratio": perf_realistic["sharpe_ratio"],
-            "Max DD (%)": perf_realistic["max_drawdown_pct"],
-            "Total Fees ($)": res_realistic["total_fees"],
-            "Slippage ($)": res_realistic["total_slippage"],
-        },
-        {
-            "Strategy": "Dynamic Passive Maker (VPIN)",
-            "Net PnL ($)": perf_passive["net_pnl"],
-            "Return (%)": perf_passive["total_return_pct"],
-            "Sharpe Ratio": perf_passive["sharpe_ratio"],
-            "Max DD (%)": perf_passive["max_drawdown_pct"],
-            "Total Fees ($)": res_passive["total_fees"],
-            "Slippage ($)": 0.0,
+    # Part 1: execution regimes at the session's base latency
+    strat_rows = []
+    equity_curves = {}
+    for model_name, sig in signals.items():
+        runner = MicrostructureStrategyRunner(make_sim(ex["base_latency_ms"]))
+        regimes = {
+            "Academic Mid-Price (Fantasy)": runner.run_academic_midprice(sig, test_mid),
+            "Aggressive Taker": runner.run_realistic_aggressive(sig, test_lob),
+            "Passive Maker (VPIN gate)": runner.run_dynamic_passive_vpin(sig, test_lob, test_vpin, vpin_thresh),
         }
-    ]
-    df_strat = pd.DataFrame(strategy_comparison)
+        for regime, res in regimes.items():
+            perf = metrics(res)
+            strat_rows.append({
+                "seed": seed, "model": model_name, "strategy": regime,
+                "net_pnl": perf["net_pnl"], "sharpe_ratio": perf["sharpe_ratio"],
+                "max_drawdown_pct": perf["max_drawdown_pct"], "num_trades": res["num_trades"],
+                "pnl_per_trade": perf["net_pnl"] / max(res["num_trades"], 1),
+                "total_fees": res.get("total_fees", 0.0), "slippage": res.get("total_slippage", 0.0),
+                "n_bars": perf["n_bars"],
+            })
+            if model_name == "LightGBM":
+                equity_curves[regime] = res["equity"]
+    df_strat = pd.DataFrame(strat_rows)
+    print(df_strat[["model", "strategy", "net_pnl", "num_trades", "sharpe_ratio"]].to_string(index=False))
 
-    print("\n================ EXECUTION SIMULATION COMPARISON ================")
-    print(df_strat.to_string(index=False))
-    print("=================================================================\n")
-
-    # ---------------------------------------------------------
-    # Part 2: Latency vs Net Profitability Sweep
-    # ---------------------------------------------------------
-    print("[+] Executing Latency Sensitivity Analysis (Speed vs Deep Mathematical Accuracy)...")
-    latencies_ms = [0.05, 0.5, 2.0, 10.0, 25.0, 50.0, 100.0]
-    
-    # LightGBM in C++ operates at ~0.05ms (50 microseconds)
-    # DeepLOB on GPU/CPU operates at ~25.0ms
-    sharpes_lgb = []
-    sharpes_deeplob = []
-
-    # Model accuracy advantage of DeepLOB over LightGBM at t=0
-    # DeepLOB has +2% accuracy edge, but decays rapidly with latency
-    for lat in latencies_ms:
-        # Latency tick equivalent (assuming ~5ms per event)
-        lag_ticks = max(1, int(round(lat / 5.0)))
-
-        # Evaluate LightGBM under this latency
-        sim_lgb = ExecutionSimulator(latency_ticks=lag_ticks)
-        runner_lgb = MicrostructureStrategyRunner(sim_lgb)
-        res_l = runner_lgb.run_realistic_aggressive(signals, test_lob)
-        perf_l = PerformanceMetrics.calculate_metrics(res_l["equity"])
-        sharpes_lgb.append(perf_l["sharpe_ratio"])
-
-        # DeepLOB signal with inherent delay: as latency increases, signal decays
-        # Add latency-dependent price decay penalty
-        sim_deep = ExecutionSimulator(latency_ticks=lag_ticks + 4, taker_fee_bps=1.5)
-        runner_deep = MicrostructureStrategyRunner(sim_deep)
-        res_d = runner_deep.run_realistic_aggressive(signals, test_lob)
-        perf_d = PerformanceMetrics.calculate_metrics(res_d["equity"])
-        sharpes_deeplob.append(perf_d["sharpe_ratio"])
-
-    df_latency = pd.DataFrame({
-        "latency_ms": latencies_ms,
-        "sharpe_lgb_cpp": sharpes_lgb,
-        "sharpe_deeplob": sharpes_deeplob
-    })
-
-    print("Latency vs Net Sharpe Ratio:")
+    # Part 2: added-latency sweep, aggressive taker, each model with its own signals
+    lat_rows = []
+    for lat in ex["latencies_ms"]:
+        row = {"seed": seed, "latency_ms": lat}
+        for model_name, sig in signals.items():
+            res = MicrostructureStrategyRunner(make_sim(lat)).run_realistic_aggressive(sig, test_lob)
+            perf = metrics(res)
+            row[f"pnl_{model_name}"] = perf["net_pnl"]
+            row[f"sharpe_{model_name}"] = perf["sharpe_ratio"]
+        lat_rows.append(row)
+    df_latency = pd.DataFrame(lat_rows)
     print(df_latency.to_string(index=False))
 
+    inference = measure_inference_latency_ms(exp_a_outputs, data)
+    inference["seed"] = seed
+    print(f"[+] Measured single-sample inference latency: {inference}")
+
     if save_artifacts:
-        csv_strat = ARTIFACTS_DIR / "experiment_d_execution_strategies.csv"
-        df_strat.to_csv(csv_strat, index=False)
-        csv_lat = ARTIFACTS_DIR / "experiment_d_latency_sharpe.csv"
-        df_latency.to_csv(csv_lat, index=False)
+        df_strat.to_csv(ARTIFACTS_DIR / "experiment_d_execution_strategies.csv", index=False)
+        df_latency.to_csv(ARTIFACTS_DIR / "experiment_d_latency_sharpe.csv", index=False)
+        plot_execution_equity_curves(equity_curves, ARTIFACTS_DIR / "experiment_d_equity_curves.png")
+        plot_latency_vs_profitability(
+            ex["latencies_ms"],
+            {"LightGBM": df_latency["sharpe_LightGBM"].tolist(), "DeepLOB": df_latency["sharpe_DeepLOB"].tolist()},
+            ARTIFACTS_DIR / "experiment_d_latency_vs_profit.png",
+        )
 
-        # Plot equity curves
-        equity_dict = {
-            "Academic Mid-Price (Fantasy)": res_academic["equity"],
-            "Realistic Aggressive Taker (Friction)": res_realistic["equity"],
-            "Dynamic Passive Maker (VPIN Defense)": res_passive["equity"],
-        }
-        plot_equity = ARTIFACTS_DIR / "experiment_d_equity_curves.png"
-        plot_execution_equity_curves(equity_dict, plot_equity)
-
-        # Plot latency vs Sharpe
-        sharpe_dict = {
-            "LightGBM (C++ Engine)": sharpes_lgb,
-            "DeepLOB (GPU Neural Net)": sharpes_deeplob
-        }
-        plot_lat = ARTIFACTS_DIR / "experiment_d_latency_vs_profit.png"
-        plot_latency_vs_profitability(latencies_ms, sharpe_dict, plot_lat)
-        print(f"\n[+] Saved execution artifacts and plots to {ARTIFACTS_DIR}")
-
-    return df_strat, df_latency
+    return df_strat, df_latency, inference
 
 
 if __name__ == "__main__":
-    run_experiment_d()
+    from src.experiments.exp_a_predictive_power import run_experiment_a
+    prepared = load_prepared()
+    _, outputs = run_experiment_a(prepared)
+    run_experiment_d(prepared, outputs)

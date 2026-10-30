@@ -6,29 +6,32 @@ from sklearn.linear_model import LogisticRegression, RidgeClassifier
 
 
 class NaiveMomentumBaseline:
-    """Tier 0: Next price movement equals the previous movement.
-    
-    Tests whether simple momentum carries directional predictive information.
+    """Tier 0: Predict that the most recent *realized* k-event move repeats.
+
+    The label at row t compares the smoothed mid-price at t+k with t, so it is only
+    known at time t+k. The latest label observable at decision time t is therefore
+    y[t-k], not y[t-1] (y[t-1] already contains k-1 events of future prices).
     """
-    def __init__(self):
-        self.last_label = 0
+    def __init__(self, horizon_k: int = 20):
+        self.horizon_k = horizon_k
 
     def fit(self, X: np.ndarray, y: np.ndarray):
         pass
 
-    def predict(self, y_lagged: np.ndarray) -> np.ndarray:
-        """Shifts lagged labels by 1 to simulate momentum forecasting."""
-        preds = np.roll(y_lagged, 1)
-        preds[0] = 0
+    def predict(self, y_full: np.ndarray, indices: Optional[np.ndarray] = None) -> np.ndarray:
+        """Predictions for rows `indices` of the full label series (default: every row)."""
+        if indices is None:
+            indices = np.arange(len(y_full))
+        src = np.asarray(indices) - self.horizon_k
+        preds = np.zeros(len(src), dtype=np.int64)
+        valid = src >= 0
+        preds[valid] = y_full[src[valid]]
         return preds
 
-    def predict_proba(self, y_lagged: np.ndarray) -> np.ndarray:
-        n = len(y_lagged)
-        proba = np.full((n, 3), 1.0 / 3.0, dtype=np.float32)
-        preds = self.predict(y_lagged)
-        for i in range(n):
-            proba[i, :] = 0.1
-            proba[i, preds[i]] = 0.8
+    def predict_proba(self, y_full: np.ndarray, indices: Optional[np.ndarray] = None) -> np.ndarray:
+        preds = self.predict(y_full, indices)
+        proba = np.full((len(preds), 3), 0.1, dtype=np.float32)
+        proba[np.arange(len(preds)), preds] = 0.8
         return proba
 
 
@@ -63,14 +66,19 @@ class LogisticRegressionBaseline:
             C=C,
             max_iter=max_iter,
             random_state=random_state,
-            solver="lbfgs"
+            solver="lbfgs",
+            class_weight="balanced"
         )
 
     def fit(self, X: np.ndarray, y: np.ndarray):
-        self.model.fit(X, y)
+        # Features span very different scales (OFI in shares, imbalances in [-1, 1]);
+        # standardize with training statistics so the L2 penalty treats them evenly.
+        self.mean_ = X.mean(axis=0)
+        self.std_ = X.std(axis=0) + 1e-8
+        self.model.fit((X - self.mean_) / self.std_, y)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict(X)
+        return self.model.predict((X - self.mean_) / self.std_)
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(X)
+        return self.model.predict_proba((X - self.mean_) / self.std_)

@@ -4,8 +4,8 @@ Accurately models:
 - Spread-crossing penalties (buying at Ask, selling at Bid)
 - Walking the book / multi-level market impact slippage
 - Exchange fee schedules (Maker rebate vs Taker fee)
-- Execution latency (queue delay and price dislocation during transit)
-- Queue priority and adverse selection on passive limit fills
+- Execution latency measured in wall-clock time against snapshot timestamps
+- Passive fills under a conservative trade-through rule (adverse selection is endogenous)
 """
 
 from dataclasses import dataclass
@@ -25,7 +25,6 @@ class TradeExecution:
     slippage: float
     gross_pnl: float = 0.0
     net_pnl: float = 0.0
-    adverse_selected: bool = False
 
 
 class ExecutionSimulator:
@@ -36,10 +35,11 @@ class ExecutionSimulator:
         initial_cash: float = 1000000.0,
         maker_fee_bps: float = -0.5,    # -0.5 bps maker rebate
         taker_fee_bps: float = 1.5,     # 1.5 bps taker fee
-        latency_ticks: int = 1,         # ticks of delay from decision to exchange arrival
+        latency_ticks: int = 1,         # events of delay, used when no timestamps are given
         lot_size: float = 100.0,
         max_inventory: float = 500.0,
-        adverse_selection_cost_bps: float = 2.0
+        latency_ms: Optional[float] = None,
+        timestamps_ms: Optional[np.ndarray] = None
     ):
         self.initial_cash = initial_cash
         self.maker_fee = maker_fee_bps / 10000.0
@@ -47,7 +47,11 @@ class ExecutionSimulator:
         self.latency_ticks = latency_ticks
         self.lot_size = lot_size
         self.max_inventory = max_inventory
-        self.adverse_penalty = adverse_selection_cost_bps / 10000.0
+        # With timestamps, an order sent at decision time t reaches the exchange at the
+        # first snapshot with timestamp >= t + latency_ms. Otherwise fall back to a fixed
+        # number of events.
+        self.latency_ms = latency_ms
+        self.timestamps_ms = timestamps_ms
 
         # Account state
         self.cash = initial_cash
@@ -67,6 +71,15 @@ class ExecutionSimulator:
         self.total_fees = 0.0
         self.total_slippage = 0.0
 
+    def arrival_index(self, decision_idx: int, n_rows: int) -> int:
+        """Snapshot index at which an order sent at `decision_idx` reaches the book."""
+        if self.latency_ms is not None and self.timestamps_ms is not None:
+            target = self.timestamps_ms[decision_idx] + self.latency_ms
+            idx = int(np.searchsorted(self.timestamps_ms, target, side="left"))
+        else:
+            idx = decision_idx + self.latency_ticks
+        return min(max(idx, decision_idx), n_rows - 1)
+
     def execute_aggressive_order(
         self,
         decision_idx: int,
@@ -84,7 +97,7 @@ class ExecutionSimulator:
             return None
 
         # Simulate execution latency delay: arrives at exchange at arrival_idx
-        arrival_idx = min(decision_idx + self.latency_ticks, len(lob_40) - 1)
+        arrival_idx = self.arrival_index(decision_idx, len(lob_40))
         snapshot = lob_40[arrival_idx]
         decision_snapshot = lob_40[decision_idx]
 
@@ -156,66 +169,65 @@ class ExecutionSimulator:
         self.trades.append(trade)
         return trade
 
-    def execute_passive_order(
+    def passive_fill_index(
         self,
-        decision_idx: int,
-        side: int,  # +1: Resting Bid, -1: Resting Ask
+        side: int,
+        price: float,
+        post_idx: int,
         lob_40: np.ndarray,
-        vpin_metric: float,
-        vpin_toxic_threshold: float = 0.65,
+        max_wait: int
+    ) -> Optional[int]:
+        """First snapshot after `post_idx` where a resting order at `price` would have filled.
+
+        Conservative trade-through rule: we assume we sit at the back of the queue, so a
+        resting bid only fills once the best bid trades *below* our price (the whole queue
+        at our level was consumed), and symmetrically for asks. Fills therefore happen
+        exactly when the market moves against the order, which is adverse selection.
+        """
+        end = min(post_idx + max_wait, len(lob_40) - 1)
+        if end <= post_idx:
+            return None
+        window = lob_40[post_idx + 1 : end + 1]
+        eps = 1e-9
+        if side > 0:
+            hit = np.nonzero(window[:, 2] < price - eps)[0]
+        else:
+            hit = np.nonzero(window[:, 0] > price + eps)[0]
+        return int(post_idx + 1 + hit[0]) if len(hit) else None
+
+    def fill_passive_order(
+        self,
+        fill_idx: int,
+        side: int,
+        price: float,
+        mid_at_decision: float,
         size: Optional[float] = None
     ) -> Optional[TradeExecution]:
-        """Simulates passive limit order fill with adverse selection mechanics."""
+        """Books a passive fill at `price`, earning the maker rebate."""
         order_size = size if size is not None else self.lot_size
-
         if side > 0 and (self.position + order_size) > self.max_inventory:
             return None
         if side < 0 and (self.position - order_size) < -self.max_inventory:
             return None
 
-        arrival_idx = min(decision_idx + self.latency_ticks, len(lob_40) - 1)
-        snapshot = lob_40[arrival_idx]
-        mid_at_decision = (lob_40[decision_idx, 0] + lob_40[decision_idx, 2]) / 2.0
-
-        # Fill price at top of book
-        fill_price = snapshot[2] if side > 0 else snapshot[0]
-
-        # Adverse selection determination:
-        # High VPIN indicates toxic informed order flow sweeping the book
-        adverse = vpin_metric > vpin_toxic_threshold
-        if adverse:
-            # Adverse fill penalty: counterparty swept the book and price immediately dislocates
-            penalty = fill_price * self.adverse_penalty
-            if side > 0:
-                effective_price = fill_price + penalty  # Bought before a drop
-            else:
-                effective_price = fill_price - penalty  # Sold before a rally
-        else:
-            effective_price = fill_price
-
-        # Maker fee (rebate if negative)
-        fee = effective_price * order_size * self.maker_fee
-        slippage = 0.0  # Resting order earns spread
-
+        fee = price * order_size * self.maker_fee
         if side > 0:
-            self.cash -= (effective_price * order_size + fee)
+            self.cash -= (price * order_size + fee)
             self.position += order_size
         else:
-            self.cash += (effective_price * order_size - fee)
+            self.cash += (price * order_size - fee)
             self.position -= order_size
-
         self.total_fees += fee
 
         trade = TradeExecution(
-            timestamp_idx=arrival_idx,
+            timestamp_idx=fill_idx,
             side=side,
             order_type="passive",
-            fill_price=effective_price,
+            fill_price=price,
             mid_price_at_decision=mid_at_decision,
             size=order_size,
             fee_paid=fee,
-            slippage=slippage,
-            adverse_selected=adverse
+            slippage=0.0
         )
         self.trades.append(trade)
         return trade

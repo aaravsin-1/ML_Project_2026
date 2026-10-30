@@ -59,7 +59,8 @@ class LightGBMLOB:
         learning_rate: float = 0.05,
         n_estimators: int = 250,
         random_state: int = 42,
-        n_jobs: int = -1
+        n_jobs: int = -1,
+        class_weight: Optional[str] = "balanced"
     ):
         self.model = lgb.LGBMClassifier(
             objective="multiclass",
@@ -70,7 +71,8 @@ class LightGBMLOB:
             n_estimators=n_estimators,
             random_state=random_state,
             n_jobs=n_jobs,
-            class_weight="balanced",
+            class_weight=class_weight,
+            importance_type="gain",
             verbosity=-1
         )
 

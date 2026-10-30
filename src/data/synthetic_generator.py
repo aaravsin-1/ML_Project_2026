@@ -50,14 +50,15 @@ class SyntheticLOBGenerator:
         self,
         n_events: int = 50000,
         dt_mean_ms: float = 10.0
-    ) -> Tuple[np.ndarray, Dict[int, np.ndarray], pd.DataFrame]:
+    ) -> Tuple[np.ndarray, Dict[int, np.ndarray], pd.DataFrame, np.ndarray]:
         """Generates a complete synthetic trading session.
         
         Returns:
-            lob_features: (n_events, 40) array in FI-2010 format:
+            lob_features: (n_events, 40) float64 array in FI-2010 format, prices snapped to the tick grid:
                           [ask_p1, ask_v1, bid_p1, bid_v1, ..., ask_p10, ask_v10, bid_p10, bid_v10]
             labels: dict mapping horizon k -> (n_events,) int labels (0: FLAT, 1: UP, 2: DOWN)
             trades_df: DataFrame of executed trades for VPIN calculation (timestamp, price, size, direction)
+            timestamps_ms: (n_events,) snapshot timestamps, needed to map volume-clock VPIN onto the LOB
         """
         # Initialize prices
         mid_price = self.base_price
@@ -65,7 +66,7 @@ class SyntheticLOBGenerator:
         best_ask = best_bid + (self.spread_ticks * self.tick_size)
 
         # Pre-allocate output arrays
-        lob_features = np.zeros((n_events, self.num_levels * 4), dtype=np.float32)
+        lob_features = np.zeros((n_events, self.num_levels * 4), dtype=np.float64)
         timestamps = np.zeros(n_events, dtype=np.float64)
         current_time_ms = 0.0
 
@@ -170,11 +171,13 @@ class SyntheticLOBGenerator:
 
             # Record snapshot in canonical 40-feature representation
             # [ask_p1, ask_v1, bid_p1, bid_v1, ask_p2, ask_v2, bid_p2, bid_v2, ...]
+            # Prices are snapped to the tick grid so repeated += tick_size does not leave
+            # floating-point residue that models could pick up as a fake signal.
             for lvl in range(self.num_levels):
                 idx = lvl * 4
-                lob_features[t, idx] = asks[lvl, 0]
+                lob_features[t, idx] = round(asks[lvl, 0] / self.tick_size) * self.tick_size
                 lob_features[t, idx + 1] = asks[lvl, 1]
-                lob_features[t, idx + 2] = bids[lvl, 0]
+                lob_features[t, idx + 2] = round(bids[lvl, 0] / self.tick_size) * self.tick_size
                 lob_features[t, idx + 3] = bids[lvl, 1]
 
         # Calculate mid-prices
@@ -188,7 +191,7 @@ class SyntheticLOBGenerator:
             columns=["timestamp_ms", "price", "size", "direction"]
         )
 
-        return lob_features, labels, trades_df
+        return lob_features, labels, trades_df, timestamps
 
     def _shift_book_up(self, bids: np.ndarray, asks: np.ndarray):
         """Shift depth levels up when ask level 1 is swept."""

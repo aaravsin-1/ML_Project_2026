@@ -60,29 +60,50 @@ def test_walking_the_book_slippage():
     assert trade.fill_price > 100.05  # Proves slippage from walking the book!
 
 
-def test_passive_adverse_selection():
-    """Validates passive fills and adverse selection penalty when VPIN is high."""
-    sim = ExecutionSimulator(
-        initial_cash=100000.0,
-        maker_fee_bps=-0.5,
-        adverse_selection_cost_bps=2.0
-    )
-    lob = np.zeros((2, 40), dtype=np.float32)
-    lob[:, 0] = 100.05
-    lob[:, 1] = 500.0
-    lob[:, 2] = 100.00
-    lob[:, 3] = 500.0
+def test_passive_fill_requires_trade_through():
+    """A resting bid fills only after the best bid trades below it, and earns the rebate."""
+    sim = ExecutionSimulator(initial_cash=100000.0, maker_fee_bps=-0.5, latency_ticks=0)
+    lob = np.zeros((6, 40), dtype=np.float64)
+    lob[:, 0] = [100.01, 100.01, 100.01, 100.01, 100.00, 100.00]  # ask
+    lob[:, 2] = [100.00, 100.00, 100.00, 100.00, 99.99, 99.99]    # bid drops at row 4
+    lob[:, 1] = lob[:, 3] = 500.0
 
-    # Case A: Low VPIN (safe)
-    trade_safe = sim.execute_passive_order(
-        decision_idx=0, side=1, lob_40=lob, vpin_metric=0.30, vpin_toxic_threshold=0.65
-    )
-    assert not trade_safe.adverse_selected
-    assert np.isclose(trade_safe.fill_price, 100.00)
+    # Bid at 100.00 posted at row 0: no fill while the bid holds, fill at row 4
+    assert sim.passive_fill_index(side=1, price=100.00, post_idx=0, lob_40=lob, max_wait=10) == 4
+    # A short wait window expires before the trade-through
+    assert sim.passive_fill_index(side=1, price=100.00, post_idx=0, lob_40=lob, max_wait=3) is None
+    # An ask at 100.01 never fills because the ask never trades above it
+    assert sim.passive_fill_index(side=-1, price=100.01, post_idx=0, lob_40=lob, max_wait=10) is None
 
-    # Case B: High VPIN (toxic flow -> adverse fill penalty)
-    trade_toxic = sim.execute_passive_order(
-        decision_idx=0, side=1, lob_40=lob, vpin_metric=0.85, vpin_toxic_threshold=0.65
-    )
-    assert trade_toxic.adverse_selected
-    assert trade_toxic.fill_price > 100.00  # Penalized by adverse selection
+    trade = sim.fill_passive_order(fill_idx=4, side=1, price=100.00, mid_at_decision=100.005)
+    assert np.isclose(trade.fill_price, 100.00)
+    assert trade.fee_paid < 0  # maker rebate
+    assert np.isclose(sim.position, 100.0)
+
+
+def test_latency_uses_timestamps():
+    """With timestamps, orders arrive at the first snapshot at or after t + latency."""
+    ts = np.array([0.0, 4.0, 9.0, 15.0, 30.0])
+    lob = np.zeros((5, 40))
+    sim = ExecutionSimulator(latency_ms=10.0, timestamps_ms=ts)
+    assert sim.arrival_index(0, len(lob)) == 3
+    assert sim.arrival_index(3, len(lob)) == 4
+    assert sim.arrival_index(4, len(lob)) == 4  # clipped at the end of the data
+    assert ExecutionSimulator(latency_ms=0.0, timestamps_ms=ts).arrival_index(2, len(lob)) == 2
+
+
+def test_sharpe_uses_time_bars():
+    """Sharpe is computed on wall-clock bars and annualized by the bar count per year."""
+    rng = np.random.default_rng(0)
+    ts = np.arange(2000) * 10.0  # 10 ms events -> 20 one-second bars
+    equity = 1e6 + np.cumsum(rng.normal(1.0, 5.0, size=2000))
+    m = PerformanceMetrics.calculate_metrics(equity, 1e6, timestamps_ms=ts, bar_ms=1000.0)
+    assert m["n_bars"] == 19
+    bars = equity[99::100]
+    r = np.diff(bars) / bars[:-1]
+    expected = r.mean() / r.std() * np.sqrt(252 * 6.5 * 3600)
+    assert np.isclose(m["sharpe_ratio"], expected)
+    # Without timestamps the Sharpe is per step and not annualized
+    m_raw = PerformanceMetrics.calculate_metrics(equity, 1e6)
+    r_raw = np.diff(equity) / equity[:-1]
+    assert np.isclose(m_raw["sharpe_ratio"], r_raw.mean() / r_raw.std())

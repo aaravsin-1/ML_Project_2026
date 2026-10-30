@@ -1,2 +1,2 @@
 metric,throughput_mps,feat_p50_us,feat_p99_us,inf_p50_us,inf_p99_us,e2e_p50_us,e2e_p90_us,e2e_p99_us,e2e_p999_us
-cpp_pipeline,361260,0,0.2,2,7.3,2.1,5.1,7.6,16.2
+cpp_pipeline,398975,0,0.2,1.8,6.1,1.9,4.6,6.3,15.1

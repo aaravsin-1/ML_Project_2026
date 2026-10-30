@@ -22,7 +22,7 @@ class ModelRegistry:
     def create_model(model_name: str, **kwargs) -> Any:
         model_name = model_name.lower().replace("-", "_")
         if model_name in ["naive_momentum", "momentum"]:
-            return NaiveMomentumBaseline()
+            return NaiveMomentumBaseline(**kwargs)
         elif model_name in ["naive_flat", "flat"]:
             return NaiveFlatBaseline()
         elif model_name in ["logistic", "ridge", "linear"]:
@@ -43,6 +43,12 @@ class ModelRegistry:
             raise ValueError(f"Unknown model architecture: {model_name}")
 
 
+def balanced_class_weights(y: np.ndarray, num_classes: int = 3) -> np.ndarray:
+    """sklearn-style 'balanced' weights: n_samples / (n_classes * count_c)."""
+    counts = np.bincount(y, minlength=num_classes).astype(np.float64)
+    return len(y) / (num_classes * np.maximum(counts, 1.0))
+
+
 class DeepLearningTrainer:
     """Trainer for PyTorch sequential architectures (LSTM, GRU, DeepLOB, TLOB)."""
 
@@ -51,7 +57,8 @@ class DeepLearningTrainer:
         model: nn.Module,
         learning_rate: float = 0.0005,
         weight_decay: float = 1e-4,
-        device: Optional[str] = None
+        device: Optional[str] = None,
+        class_weights: Optional[np.ndarray] = None
     ):
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,7 +68,10 @@ class DeepLearningTrainer:
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
-        self.criterion = nn.CrossEntropyLoss()
+        # Same "balanced" class weighting as the tree and linear models, so every tier
+        # optimizes the same objective and macro-F1 comparisons are like for like.
+        weight = None if class_weights is None else torch.tensor(class_weights, dtype=torch.float32, device=self.device)
+        self.criterion = nn.CrossEntropyLoss(weight=weight)
 
     def train_epoch(self, dataloader: DataLoader) -> float:
         self.model.train()

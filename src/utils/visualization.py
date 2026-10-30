@@ -26,8 +26,10 @@ def plot_model_comparison(df_results: pd.DataFrame, save_path: Path):
     x = np.arange(len(df_results))
     width = 0.35
 
-    rects1 = ax.bar(x - width/2, df_results["macro_f1"], width, label="Macro F1-Score", color="#2b5c8f")
-    rects2 = ax.bar(x + width/2, df_results["accuracy"], width, label="Accuracy", color="#d95f02")
+    f1_err = df_results["macro_f1_std"] if "macro_f1_std" in df_results else None
+    acc_err = df_results["accuracy_std"] if "accuracy_std" in df_results else None
+    rects1 = ax.bar(x - width/2, df_results["macro_f1"], width, yerr=f1_err, capsize=3, label="Macro F1-Score", color="#2b5c8f")
+    rects2 = ax.bar(x + width/2, df_results["accuracy"], width, yerr=acc_err, capsize=3, label="Accuracy", color="#d95f02")
 
     ax.set_ylabel("Score")
     ax.set_title("Experiment A: Model Hierarchy Performance Progression (Tier 0 to Tier 5)")
@@ -51,12 +53,21 @@ def plot_model_comparison(df_results: pd.DataFrame, save_path: Path):
     plt.close(fig)
 
 
-def plot_signal_decay(horizons: List[int], f1_scores: List[float], save_path: Path):
+def plot_signal_decay(
+    horizons: List[int],
+    f1_scores: List[float],
+    save_path: Path,
+    f1_std: Optional[List[float]] = None,
+    baseline_f1: Optional[List[float]] = None
+):
     """Line plot showing signal decay curve across prediction horizons."""
     set_plotting_style()
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
-    ax.plot(horizons, f1_scores, marker="o", linewidth=2.5, markersize=8, color="#c0392b", label="Optimal Model (Macro-F1)")
+    ax.errorbar(horizons, f1_scores, yerr=f1_std, marker="o", linewidth=2.5, markersize=8, capsize=4,
+                color="#c0392b", label="LightGBM (Macro-F1)")
+    if baseline_f1 is not None:
+        ax.plot(horizons, baseline_f1, marker="s", linewidth=1.8, color="#2c3e50", label="Naïve Momentum (lag k)")
     ax.axhline(y=1.0/3.0, color="#7f8c8d", linestyle="--", label="Random Baseline (1/3)")
 
     ax.set_title("Experiment B: The Horizon of Signal Survival (Alpha Decay Curve)")
@@ -80,7 +91,8 @@ def plot_ablation_progression(ablation_results: pd.DataFrame, save_path: Path):
     fig, ax = plt.subplots(figsize=(9, 4.5))
 
     colors = ["#95a5a6", "#3498db", "#9b59b6", "#e67e22", "#27ae60"]
-    bars = ax.bar(ablation_results["model_tier"], ablation_results["macro_f1"], color=colors, width=0.55)
+    err = ablation_results["macro_f1_std"] if "macro_f1_std" in ablation_results else None
+    bars = ax.bar(ablation_results["model_tier"], ablation_results["macro_f1"], yerr=err, capsize=4, color=colors, width=0.55)
 
     ax.set_ylabel("Macro F1-Score")
     ax.set_title("Experiment C: Feature and Depth Ablation Study (Information Isolation)")
@@ -104,8 +116,8 @@ def plot_execution_equity_curves(equity_dict: Dict[str, np.ndarray], save_path: 
 
     styles = {
         "Academic Mid-Price (Fantasy)": ("#27ae60", "--", 1.8),
-        "Realistic Aggressive Taker (Friction)": ("#c0392b", "-", 2.0),
-        "Dynamic Passive Maker (VPIN Defense)": ("#2980b9", "-", 2.0),
+        "Aggressive Taker": ("#c0392b", "-", 2.0),
+        "Passive Maker (VPIN gate)": ("#2980b9", "-", 2.0),
     }
 
     for name, equity in equity_dict.items():
@@ -125,21 +137,26 @@ def plot_execution_equity_curves(equity_dict: Dict[str, np.ndarray], save_path: 
 
 def plot_latency_vs_profitability(
     latencies_ms: List[float],
-    sharpe_ratios: Dict[str, List[float]],
-    save_path: Path
+    series: Dict[str, List[float]],
+    save_path: Path,
+    stds: Optional[Dict[str, List[float]]] = None,
+    ylabel: str = "Annualized Net Sharpe Ratio"
 ):
-    """Plots Sharpe Ratio degradation as latency increases (Speed vs Mathematical Accuracy)."""
+    """Plots a profitability metric against added execution latency, one line per model."""
     set_plotting_style()
     fig, ax = plt.subplots(figsize=(8.5, 4.5))
 
-    ax.plot(latencies_ms, sharpe_ratios["LightGBM (C++ Engine)"], marker="s", linewidth=2.2, color="#2980b9", label="LightGBM (C++ Engine)")
-    ax.plot(latencies_ms, sharpe_ratios["DeepLOB (GPU Neural Net)"], marker="o", linewidth=2.2, color="#e67e22", label="DeepLOB (Deep CNN-LSTM)")
+    styles = [("#2980b9", "s"), ("#e67e22", "o"), ("#27ae60", "^")]
+    for (name, values), (color, marker) in zip(series.items(), styles):
+        err = None if stds is None else stds.get(name)
+        ax.errorbar(latencies_ms, values, yerr=err, marker=marker, linewidth=2.2, capsize=3, color=color, label=name)
 
     ax.axhline(0, color="black", linestyle="--", linewidth=0.8, alpha=0.7)
-    ax.set_xscale("log")
-    ax.set_title("Economic Viability: Latency Decay vs Net Sharpe Ratio")
-    ax.set_xlabel("System Latency (milliseconds, log-scale)")
-    ax.set_ylabel("Annualized Net Sharpe Ratio")
+    ax.set_xscale("symlog", linthresh=0.05)
+    ax.set_xlim(left=0, right=max(latencies_ms) * 1.2)
+    ax.set_title("Execution Latency vs Net Profitability (Aggressive Taker)")
+    ax.set_xlabel("Added latency (milliseconds, symlog scale)")
+    ax.set_ylabel(ylabel)
     ax.legend()
     ax.grid(True, which="both", linestyle=":", alpha=0.5)
 

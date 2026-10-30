@@ -82,3 +82,50 @@ def test_bilinear_normalization():
     loss.backward()
     assert bin_layer.gamma_feat.grad is not None
     assert bin_layer.gamma_time.grad is not None
+
+
+def _session(n=3000, seed=3):
+    from src.data.synthetic_generator import SyntheticLOBGenerator
+    return SyntheticLOBGenerator(seed=seed).generate_session(n_events=n)
+
+
+def test_pipeline_fits_on_training_rows_only():
+    """Changing data after fit_end must not change features before it."""
+    from src.microstructure.pipeline import MicrostructureFeaturePipeline
+    lob, _, trades, ts = _session()
+    fit_end = 2000
+    X1, _, names = MicrostructureFeaturePipeline().fit_transform(lob, trades, ts, fit_end=fit_end)
+
+    lob2 = lob.copy()
+    lob2[fit_end:, 1::2] *= 3.0  # perturb all future volumes
+    X2, _, _ = MicrostructureFeaturePipeline().fit_transform(lob2, trades, ts, fit_end=fit_end)
+    vpin = names.index("vpin")
+    keep = [i for i in range(len(names)) if i != vpin]  # trade tape is unchanged, so skip VPIN
+    assert np.allclose(X1[:fit_end][:, keep], X2[:fit_end][:, keep])
+
+
+def test_pipeline_uses_real_vpin_and_tick_spread():
+    from src.microstructure.pipeline import MicrostructureFeaturePipeline
+    lob, _, trades, ts = _session()
+    pipe = MicrostructureFeaturePipeline()
+    X, _, names = pipe.fit_transform(lob, trades, ts, fit_end=2000)
+
+    vpin = X[:, names.index("vpin")]
+    imb = X[:, names.index("imbalance_l1")]
+    assert not np.allclose(vpin, np.clip(np.abs(imb) * 0.5 + 0.3, 0, 1))
+    assert vpin.min() >= 0.0 and vpin.max() <= 1.0
+
+    spread = X[:, names.index("spread_ticks")]
+    assert np.all(spread == np.round(spread))
+    assert "rel_spread" not in names
+
+    with pytest.raises(ValueError):
+        MicrostructureFeaturePipeline().fit_transform(lob, trades, None, fit_end=2000)
+
+
+def test_purged_split_has_gap():
+    from src.data.lob_dataset import purged_split_indices
+    idx = purged_split_indices(1000, horizon_k=20, min_start=99)
+    assert idx["train"][0] == 99 and idx["train"][-1] == 699 - 20
+    assert idx["val"][0] == 700 and idx["val"][-1] == 849 - 20
+    assert idx["test"][0] == 850 and idx["test"][-1] == 999 - 20
