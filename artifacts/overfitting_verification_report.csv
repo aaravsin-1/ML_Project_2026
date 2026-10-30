@@ -1,0 +1,11 @@
+check,value,criterion,status
+Generalization Gap (F1 Train - Test),0.12115672517922926,< 0.25,PASS
+Test Matthews Correlation Coef (MCC),0.4254212928891319,> 0,PASS
+Test Cohen's Kappa,0.4000783724713256,> 0,PASS
+Test Macro-F1 lift over naive momentum (lag k),0.09557299735732427,> 0,PASS
+Purged CV Mean Macro-F1,0.5879065412673585,fold std < 0.05,PASS
+Purged CV Min MCC,0.38618454651160405,every fold > 0,PASS
+Permutation Check Macro-F1,0.2880286744023215,<= 0.45,PASS
+Permutation Check MCC,-0.02553389690156218,|MCC| <= 0.10,PASS
+Cross-Regime Small-Tick Transfer Macro-F1,0.5087950444882172,MCC > 0,PASS
+Cross-Regime Small-Tick Transfer MCC,0.3441693924021614,> 0,PASS
