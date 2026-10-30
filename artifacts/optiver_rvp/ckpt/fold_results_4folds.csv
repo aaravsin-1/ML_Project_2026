@@ -17,3 +17,5 @@ fold,model,rmspe
 3,"+ NN features, transductive (1st-place style, leaks future)",0.1923396710572139
 0,"LightGBM, shuffled K-fold CV",0.20719635917750326
 1,"LightGBM, shuffled K-fold CV",0.21795197258297852
+2,"LightGBM, shuffled K-fold CV",0.20394231866146387
+3,"LightGBM, shuffled K-fold CV",0.21691358328474644
