@@ -53,12 +53,47 @@ def kaggle_cli() -> list:
     return [exe] if exe else [sys.executable, "-c", "from kaggle.cli import main; main()"]
 
 
+FI2010_PREFIX = "BenchmarkDatasets/NoAuction/1.NoAuction_Zscore/"
+
+
+def extract_fi2010(z: zipfile.ZipFile, dest: Path, depth: int = 0):
+    """Extracts only the 4 Setup 2 files (~0.9 GB of 8 GB) to their expected paths.
+
+    Files are matched by name wherever they sit in the archive, so a different top-level
+    folder in the Kaggle mirror still works; zips nested inside the archive are searched too.
+    """
+    wanted = {Path(m).name: m for m in FI2010_FILES}
+    found = {}
+    for info in z.infolist():
+        base = info.filename.rsplit("/", 1)[-1]
+        if base in wanted and base not in found:
+            found[base] = info
+    for base, info in found.items():
+        target = dest / FI2010_PREFIX / wanted[base]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with z.open(info) as src, open(target, "wb") as out:
+            shutil.copyfileobj(src, out, length=16 << 20)
+    missing = [b for b in wanted if b not in found]
+    if missing and depth == 0:
+        for inner in [i for i in z.infolist() if i.filename.lower().endswith(".zip")]:
+            tmp = dest / Path(inner.filename).name
+            with z.open(inner) as src, open(tmp, "wb") as out:
+                shutil.copyfileobj(src, out, length=16 << 20)
+            with zipfile.ZipFile(tmp) as nested:
+                missing = extract_fi2010(nested, dest, depth + 1)
+            tmp.unlink()
+            if not missing:
+                break
+    if missing and depth == 0:
+        sample = "\n      ".join(i.filename for i in z.infolist()[:15])
+        raise FileNotFoundError(f"FI-2010 archive does not contain {missing}. First entries:\n      {sample}")
+    return missing
+
+
 def extract(zip_path: Path, dest: Path, name: str):
     with zipfile.ZipFile(zip_path) as z:
         if name == "fi2010":
-            prefix = "BenchmarkDatasets/NoAuction/1.NoAuction_Zscore/"
-            for member in FI2010_FILES:
-                z.extract(prefix + member, dest)  # only the 4 Setup 2 files (~0.9 GB of 8 GB)
+            extract_fi2010(z, dest)
         else:
             z.extractall(dest)
 
@@ -79,9 +114,18 @@ def fetch(name: str, keep_zips: bool) -> bool:
             print(f"    Accept the competition rules with your Kaggle account first: {RULES[name]}")
         return False
 
-    for zip_path in dest.glob("*.zip"):
+    zips = list(dest.glob("*.zip"))
+    if not zips and not (dest / marker).exists():
+        print(f"[!] {name}: Kaggle reported success but no archive arrived in {dest}. Output:\n"
+              f"{(proc.stdout + proc.stderr).strip()[-500:]}")
+        return False
+    for zip_path in zips:
         print(f"    extracting {zip_path.name}")
-        extract(zip_path, dest, name)
+        try:
+            extract(zip_path, dest, name)
+        except (zipfile.BadZipFile, FileNotFoundError, OSError) as e:
+            print(f"[!] {name}: extracting {zip_path.name} failed: {e}")
+            return False
         if not keep_zips:
             zip_path.unlink()
     ok = (dest / marker).exists()

@@ -165,7 +165,11 @@ def nearest_neighbor_features(df: pd.DataFrame, time_pos: pd.Series, past_only: 
 
     frames = []
     for n in ns:
-        f = pd.DataFrame(feats[n], index=prices.index, columns=prices.columns).stack().rename(f"nn{n}_rv1")
+        # melt rather than stack: pandas < 3 stack() drops all-NaN rows, e.g. time_ids with no
+        # past neighbour, so the output would depend on the pandas version
+        f = (pd.DataFrame(feats[n], index=prices.index, columns=prices.columns).reset_index()
+             .melt(id_vars="time_id", var_name="stock_id", value_name=f"nn{n}_rv1")
+             .set_index(["time_id", "stock_id"]).sort_index()[f"nn{n}_rv1"])
         frames.append(f)
     out = pd.concat(frames, axis=1).reset_index()
     return out
