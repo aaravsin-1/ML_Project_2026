@@ -77,6 +77,9 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     prev["date_id"] += 1
     df = df.merge(prev.rename(columns={"target": "target_prev_day"}),
                   on=["stock_id", "date_id", "seconds_in_bucket"], how="left")
+    # float32 keeps the ~5M-row feature table within a Colab instance's RAM
+    floats = df.select_dtypes("float64").columns
+    df[floats] = df[floats].astype(np.float32)
     return df
 
 
@@ -102,7 +105,8 @@ def demean(df: pd.DataFrame, pred: np.ndarray) -> np.ndarray:
 
 
 def run_close_experiment() -> pd.DataFrame:
-    raw = pd.read_csv(CLOSE_PATH)
+    raw = pd.read_csv(CLOSE_PATH, dtype={"row_id": str})
+    raw = raw.astype({c: np.float32 for c in raw.select_dtypes("float64").columns})
     raw = raw[raw.target.notna()]
     df = build_features(raw)
     cols = feature_columns(df)

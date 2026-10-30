@@ -36,10 +36,6 @@ def rmspe(y: np.ndarray, pred: np.ndarray) -> float:
     return float(np.sqrt(np.mean(np.square((y - pred) / y))))
 
 
-def _realized_vol(r: pd.Series) -> float:
-    return float(np.sqrt(np.sum(r ** 2)))
-
-
 def book_features(path: str) -> pd.DataFrame:
     df = pd.read_parquet(path)
     df["wap1"] = (df.bid_price1 * df.ask_size1 + df.ask_price1 * df.bid_size1) / (df.bid_size1 + df.ask_size1)
@@ -57,8 +53,8 @@ def book_features(path: str) -> pd.DataFrame:
         sub = df[df.seconds_in_bucket >= w]
         gs = sub.groupby("time_id")
         f = pd.DataFrame({
-            f"book_rv1_{w}": gs.lr1.apply(_realized_vol),
-            f"book_rv2_{w}": gs.lr2.apply(_realized_vol),
+            f"book_rv1_{w}": np.sqrt((sub.lr1 ** 2).groupby(sub.time_id).sum()),
+            f"book_rv2_{w}": np.sqrt((sub.lr2 ** 2).groupby(sub.time_id).sum()),
         })
         if w == 0:
             f["book_spread_mean"] = gs.spread.mean()
@@ -87,8 +83,9 @@ def trade_features(path: str) -> pd.DataFrame:
     df["lr"] = np.log(df.price).groupby(df.time_id).diff()
     out = []
     for w in WINDOWS:
-        gs = df[df.seconds_in_bucket >= w].groupby("time_id")
-        f = pd.DataFrame({f"trade_rv_{w}": gs.lr.apply(_realized_vol), f"trade_n_{w}": gs.size()})
+        sub = df[df.seconds_in_bucket >= w]
+        gs = sub.groupby("time_id")
+        f = pd.DataFrame({f"trade_rv_{w}": np.sqrt((sub.lr ** 2).groupby(sub.time_id).sum()), f"trade_n_{w}": gs.size()})
         if w == 0:
             f["trade_size_sum"] = gs["size"].sum()
             f["trade_order_count_sum"] = gs.order_count.sum()

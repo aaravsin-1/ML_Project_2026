@@ -1,13 +1,14 @@
 # High-Frequency Limit Order Book Alpha & Microstructure Execution Engine
 
-[![Tests](https://img.shields.io/badge/pytest-20%20passed-brightgreen.svg)](tests/)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/notebooks/colab_run_all.ipynb)
+[![Tests](https://img.shields.io/badge/pytest-24%20passed-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](setup.py)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%20CUDA-orange.svg)](src/models/)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20%20SIMD-darkblue.svg)](cpp/)
 
 A research framework for short-horizon price prediction from Limit Order Book (LOB) data and for testing whether predictions survive realistic execution. It covers microstructure features (OFI, multi-level OFI, VPIN, micro-price), a model hierarchy from naive baselines to DeepLOB and TLOB, an execution simulator with spread crossing, book walking, fees, latency and passive fills, and a C++20 inference-latency benchmark.
 
-> **Important: all results below are on synthetic data.** The [generator](src/data/synthetic_generator.py) plants a hidden "informed trader" state that persists for 15–60 events and skews order flow. Any predictability the models find is the predictability built into that generator. The results show the pipeline working end to end and let you compare methods under controlled conditions; they say nothing about real markets. Loaders for FI-2010, LOBSTER and crypto data are included but not used in the reported experiments.
+> **Important: all results below are on synthetic data.** The [generator](src/data/synthetic_generator.py) plants a hidden "informed trader" state that persists for 15–60 events and skews order flow. Any predictability the models find is the predictability built into that generator. The results show the pipeline working end to end and let you compare methods under controlled conditions; they say nothing about real markets. Real-data experiments (Coinbase BTC, FI-2010, two Optiver Kaggle competitions) are implemented and tested; see [Real-Data Experiments](#real-data-experiments-in-progress). Their results will be added once the runs finish.
 
 **Headline findings (5 independent sessions, mean ± std across seeds):**
 - LightGBM is the strongest model (macro-F1 **0.584 ± 0.012** at k = 20). It beats DeepLOB in 5/5 seeds (+0.025 on average) and logistic regression in 5/5 (+0.021). Its edge over Random Forest (+0.006) is within seed noise.
@@ -23,12 +24,14 @@ A research framework for short-horizon price prediction from Limit Order Book (L
 3. [Model Hierarchy (Tiers 0–5)](#model-hierarchy-tiers-05)
 4. [Methodology: Leakage Controls](#methodology-leakage-controls)
 5. [Empirical Results](#empirical-results)
-6. [C++20 Latency Benchmark](#c20-latency-benchmark)
-7. [Repository Structure](#repository-structure)
-8. [Installation & Quickstart](#installation--quickstart)
-9. [Automated Test Suite](#automated-test-suite)
-10. [Known Limitations](#known-limitations)
-11. [References](#references)
+6. [Real-Data Experiments (in progress)](#real-data-experiments-in-progress)
+7. [C++20 Latency Benchmark](#c20-latency-benchmark)
+8. [Repository Structure](#repository-structure)
+9. [Running on Google Colab](#running-on-google-colab)
+10. [Installation & Local Quickstart](#installation--local-quickstart)
+11. [Automated Test Suite](#automated-test-suite)
+12. [Known Limitations](#known-limitations)
+13. [References](#references)
 
 ---
 
@@ -214,6 +217,21 @@ Interpretation: both models lose about the same amount per millisecond of latenc
 
 ---
 
+## Real-Data Experiments (in progress)
+
+Four real datasets are wired in and tested. Their full runs are heavy, so they are meant to run on [Colab](#running-on-google-colab). Download them with `python scripts/fetch_datasets.py`.
+
+| Dataset | Source | What the experiment does |
+|:---|:---|:---|
+| **Coinbase BTC-USD**, 15-level book, 1 s snapshots, ~12 days (Apr 2021) | [Kaggle, CC0](https://www.kaggle.com/datasets/martinsn/high-frequency-crypto-limit-order-book-data) | Reruns Experiments A–D on 4 contiguous ~3-day segments. Labels use a per-horizon threshold calibrated on training rows only (one third FLAT). VPIN comes from the real signed buy/sell volume. Execution uses Coinbase's top-tier fees (0 bp maker, 4 bp taker), 0.1 BTC lots, and a latency sweep in whole seconds (the book is only observed once a second). `python scripts/run_all_experiments.py --source btc` |
+| **FI-2010**, Setup 2 | [Kaggle mirror](https://www.kaggle.com/datasets/ulfricirons/fi-2010) of Ntakaris et al. (2018) | Trains on days 1–7 and tests on days 8–10. Compares our DeepLOB, LightGBM, logistic regression and baselines with the published DeepLOB numbers (84.47% accuracy / 83.40% weighted-F1 at k = 10). `python -m src.experiments.fi2010_benchmark` |
+| **Optiver Realized Volatility** (Kaggle 2021) | [competition](https://www.kaggle.com/competitions/optiver-realized-volatility-prediction) | Book/trade volatility features. Recovers the shuffled time order with the [1st-place](https://www.kaggle.com/competitions/optiver-realized-volatility-prediction/writeups/nyanp-1st-place-solution-nearest-neighbors) tick-size + t-SNE trick, then validates forward in time. Compares the winner's nearest-neighbor features as published (neighbors drawn from all time windows, including future ones) with a past-only version, plus shuffled K-fold CV for contrast. `python -m src.experiments.optiver_rvp` |
+| **Optiver Trading at the Close** (Kaggle 2023) | [competition](https://www.kaggle.com/competitions/optiver-trading-at-the-close) | Auction-imbalance features, including the [1st-place](https://www.kaggle.com/competitions/optiver-trading-at-the-close/writeups/hyd-1st-place-solution) seconds-group and cross-sectional rank features. Uses the winner's split (first 400 days train, last 81 days holdout) and compares a model trained once with one retrained every 12 days. `python -m src.experiments.optiver_close` |
+
+The Optiver data is competition data: accept each competition's rules on kaggle.com once before downloading.
+
+---
+
 ## C++20 Latency Benchmark
 
 [main_benchmark.cpp](cpp/src/main_benchmark.cpp) times feature extraction plus tree-ensemble inference plus a simulated order on 100,000 snapshots from a random-walk book.
@@ -250,14 +268,19 @@ ML_Project_2026/
 │   ├── models/                             # Baselines, RF, LightGBM, LSTM, DeepLOB, TLOB, trainer
 │   ├── execution/                          # Simulator, strategies, performance metrics
 │   ├── experiments/
-│   │   ├── common.py                       # Shared data preparation (train-only fit, purged splits)
-│   │   └── exp_a ... exp_d                 # Experiments A-D
+│   │   ├── common.py                       # Sessions (synthetic seeds / BTC segments), train-only fit, purged splits
+│   │   ├── exp_a ... exp_d                 # Experiments A-D
+│   │   ├── fi2010_benchmark.py             # FI-2010 Setup 2 vs published DeepLOB
+│   │   ├── optiver_rvp.py                  # Optiver Realized Volatility (forward CV, NN features)
+│   │   └── optiver_close.py                # Optiver Trading at the Close (date split, retraining)
 │   └── utils/                              # Metrics, validation checks, plots
 ├── scripts/
 │   ├── run_all_experiments.py              # Multi-seed runner (aggregated + per-seed artifacts)
 │   ├── verify_robustness_and_leakage.py    # Validation report
+│   ├── fetch_datasets.py                   # Downloads the real datasets from Kaggle
 │   ├── build_and_execute_notebook.py       # Builds and runs the submission notebook
 │   └── download_or_generate_data.py
+├── notebooks/colab_run_all.ipynb           # One-click Colab runner for everything
 ├── submission/                             # Executed notebook + submission.csv
 ├── tests/
 └── artifacts/                              # CSVs and figures
@@ -265,14 +288,36 @@ ML_Project_2026/
 
 ---
 
-## Installation & Quickstart
+## Running on Google Colab
+
+The heavy runs (BTC, FI-2010, Optiver) need a GPU and several hours, so they are set up to run on Colab: open [notebooks/colab_run_all.ipynb](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/notebooks/colab_run_all.ipynb) and run the cells top to bottom.
+
+1. **Runtime → Change runtime type → T4 GPU.**
+2. Add your Kaggle API key as two Colab **Secrets** (🔑 panel): `KAGGLE_USERNAME` and `KAGGLE_KEY`. The values are in the `kaggle.json` from *kaggle.com → Settings → API → Create New Token*.
+3. For the Optiver data, accept both competitions' rules on kaggle.com with the same account.
+4. If the repo is private, also add a `GITHUB_TOKEN` secret with read access.
+
+Results and checkpoints go to Google Drive (`MyDrive/ML_Project_2026/artifacts`). Every long run checkpoints after each segment or horizon, so after a disconnect you just rerun the setup cells and the experiment cell. The last cell downloads the results as a zip to unzip into `artifacts/` locally.
+
+Paths can be redirected anywhere with the `LOB_DATA_DIR` and `LOB_ARTIFACTS_DIR` environment variables.
+
+---
+
+## Installation & Local Quickstart
 
 ```bash
 pip install -r requirements.txt
 pip install -e .
 
-# All experiments, 5 seeds (add --run-cpp to also build and run the C++ benchmark)
+# Synthetic experiments, 5 seeds (add --run-cpp to also build and run the C++ benchmark)
 python scripts/run_all_experiments.py --seeds 0 1 2 3 4 --events 60000 --epochs 10
+
+# Real data (heavy: GPU recommended)
+python scripts/fetch_datasets.py                # needs Kaggle API credentials
+python scripts/run_all_experiments.py --source btc --segments 4
+python -m src.experiments.fi2010_benchmark
+python -m src.experiments.optiver_close
+python -m src.experiments.optiver_rvp
 
 # Validation report
 python scripts/verify_robustness_and_leakage.py --seed 42 --events 60000
@@ -290,7 +335,7 @@ g++ -std=c++20 -O3 -march=native -ffast-math -I cpp/include cpp/src/main_benchma
 python -m pytest tests -v
 ```
 
-20 tests cover:
+24 tests cover:
 - feature formulas (OFI, micro-price, VPIN, BiN);
 - the pipeline fitting only on training rows, real VPIN, and the integer tick spread;
 - the purge gap;
@@ -300,13 +345,14 @@ python -m pytest tests -v
 - trade-through passive fills;
 - timestamp-based latency;
 - time-bar Sharpe;
-- purged CV and the permutation check.
+- purged CV and the permutation check;
+- real-data plumbing without downloads: train-only label thresholds, Coinbase format conversion, causality of the Optiver Close features, and past-only neighbors and forward folds for Optiver RVP.
 
 ---
 
 ## Known Limitations
 
-- **Synthetic data only.** Conclusions are about this generator. Validating on FI-2010 or LOBSTER data is the obvious next step.
+- **Synthetic results only, so far.** Conclusions above are about the generator. The real-data experiments are implemented, but their results are not in yet.
 - **Short test windows.** About 90 s of trading per seed means PnL is noisy and annualized risk metrics are not meaningful.
 - **Simple strategy.** One lot per signal up to a ±500 inventory cap, with no position sizing by confidence and no exit logic.
 - **Simple book impact.** The book does not react to our own orders beyond walking the snapshot.

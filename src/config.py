@@ -1,13 +1,15 @@
 """Global Configuration and Hyperparameters for High-Frequency LOB Research."""
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Tuple
 
-# Base Directories
+# Base Directories. LOB_DATA_DIR / LOB_ARTIFACTS_DIR override the defaults, e.g. to keep
+# results and checkpoints on Google Drive when running on Colab.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
+DATA_DIR = Path(os.environ.get("LOB_DATA_DIR", PROJECT_ROOT / "data"))
+ARTIFACTS_DIR = Path(os.environ.get("LOB_ARTIFACTS_DIR", PROJECT_ROOT / "artifacts"))
 MODELS_DIR = PROJECT_ROOT / "weights"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
