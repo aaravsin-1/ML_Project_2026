@@ -1,0 +1,21 @@
+fold,model,rmspe
+0,Naive (current RV),0.3346325793717383
+0,LightGBM (book/trade features),0.23493309349909328
+0,"+ NN features, past-only",0.22576894080335022
+0,"+ NN features, transductive (1st-place style, leaks future)",0.21687347990512723
+1,Naive (current RV),0.3534213554707991
+1,LightGBM (book/trade features),0.24508934174937508
+1,"+ NN features, past-only",0.23159285505980223
+1,"+ NN features, transductive (1st-place style, leaks future)",0.22342124549275705
+2,Naive (current RV),0.3462655303534166
+2,LightGBM (book/trade features),0.23593532292509573
+2,"+ NN features, past-only",0.2273897440797744
+2,"+ NN features, transductive (1st-place style, leaks future)",0.21801867536255612
+3,Naive (current RV),0.31353711714250515
+3,LightGBM (book/trade features),0.21434483279093933
+3,"+ NN features, past-only",0.20050975285188546
+3,"+ NN features, transductive (1st-place style, leaks future)",0.1923396710572139
+0,"LightGBM, shuffled K-fold CV",0.20719635917750326
+1,"LightGBM, shuffled K-fold CV",0.21795197258297852
+2,"LightGBM, shuffled K-fold CV",0.20394231866146387
+3,"LightGBM, shuffled K-fold CV",0.21691358328474644

@@ -1,0 +1,5 @@
+model,mae
+Zero prediction,5.9936370849609375
+"LightGBM, trained once",5.856373562575784
+"LightGBM, trained once + demean",5.853316059018625
+"LightGBM, retrained every 12 days + demean",5.847565974571192
