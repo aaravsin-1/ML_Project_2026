@@ -194,12 +194,31 @@ def fit_lgb(X_tr, y_tr, X_va, y_va, seed=0):
 
 
 def run_rvp_experiment(n_folds: int = 4) -> pd.DataFrame:
+    out = ARTIFACTS_DIR / "optiver_rvp"
+    ckpt = out / "ckpt"
+    ckpt.mkdir(parents=True, exist_ok=True)
+
     df = build_feature_table()
-    time_pos = recover_time_order(df)
+    # The recovered order defines the folds, and t-SNE need not reproduce exactly on
+    # another machine, so it is checkpointed and reused when resuming (e.g. on Colab)
+    order_path = ckpt / "recovered_time_order.csv"
+    if order_path.exists():
+        time_pos = pd.read_csv(order_path, index_col=0)["time_pos"]
+    else:
+        time_pos = recover_time_order(df)
+        time_pos.to_csv(order_path)
     df["stock_rv_target_ratio"] = np.nan  # filled per fold (train-only target encoding)
 
-    nn_trans = nearest_neighbor_features(df, time_pos, past_only=False)
-    nn_past = nearest_neighbor_features(df, time_pos, past_only=True)
+    def nn_cached(past_only: bool) -> pd.DataFrame:
+        path = ckpt / f"nn_features_{'past' if past_only else 'transductive'}.parquet"
+        if path.exists():
+            return pd.read_parquet(path)
+        feats = nearest_neighbor_features(df, time_pos, past_only=past_only)
+        feats.to_parquet(path)
+        return feats
+
+    nn_trans = nn_cached(past_only=False)
+    nn_past = nn_cached(past_only=True)
     base_cols = [c for c in df.columns if c not in ("stock_id", "time_id", "target", "recovered_price",
                                                      "stock_rv_target_ratio")]
     variants = {
@@ -211,37 +230,46 @@ def run_rvp_experiment(n_folds: int = 4) -> pd.DataFrame:
             base_cols + [c for c in nn_trans.columns if c.startswith("nn")]),
     }
 
-    rows = []
+    # One checkpoint row per (fold, model): finished fits are skipped when resuming
+    rows_path = ckpt / f"fold_results_{n_folds}folds.csv"
+    rows = pd.read_csv(rows_path).to_dict("records") if rows_path.exists() else []
+    done = {(r["fold"], r["model"]) for r in rows}
+
+    def record(fold: int, model: str, compute):
+        if (fold, model) in done:
+            return
+        rows.append({"fold": fold, "model": model, "rmspe": compute()})
+        done.add((fold, model))
+        pd.DataFrame(rows).to_csv(rows_path, index=False)
+        print(f"    fold {fold} | {model:<62} RMSPE {rows[-1]['rmspe']:.4f}")
+
     for fold, (tr_ids, va_ids) in enumerate(forward_folds(time_pos, n_folds)):
         tr_mask, va_mask = df.time_id.isin(tr_ids).to_numpy(), df.time_id.isin(va_ids).to_numpy()
         y_va = df.target.to_numpy()[va_mask]
-        rows.append({"fold": fold, "model": "Naive (current RV)", "rmspe": rmspe(y_va, df.book_rv1_0.to_numpy()[va_mask])})
+        record(fold, "Naive (current RV)", lambda: rmspe(y_va, df.book_rv1_0.to_numpy()[va_mask]))
 
         # Train-only stock target encoding: average ratio target / current RV per stock
         ratio = (df.target / df.book_rv1_0)[tr_mask].groupby(df.stock_id[tr_mask]).median()
         for name, (frame, cols) in variants.items():
-            frame = frame.copy()
-            frame["stock_rv_target_ratio"] = frame.stock_id.map(ratio)
-            use = cols + ["stock_rv_target_ratio"]
-            X, y = frame[use].to_numpy(np.float32), frame.target.to_numpy()
-            model = fit_lgb(X[tr_mask], y[tr_mask], X[va_mask], y[va_mask])
-            rows.append({"fold": fold, "model": name, "rmspe": rmspe(y[va_mask], model.predict(X[va_mask]))})
-        print(pd.DataFrame(rows[-len(variants) - 1:]).to_string(index=False))
+            def fit_variant(frame=frame, cols=cols):
+                frame = frame.copy()
+                frame["stock_rv_target_ratio"] = frame.stock_id.map(ratio)
+                X, y = frame[cols + ["stock_rv_target_ratio"]].to_numpy(np.float32), frame.target.to_numpy()
+                model = fit_lgb(X[tr_mask], y[tr_mask], X[va_mask], y[va_mask])
+                return rmspe(y[va_mask], model.predict(X[va_mask]))
+            record(fold, name, fit_variant)
 
     # Shuffled K-fold on the base model, to show how optimistic non-temporal CV is
     from sklearn.model_selection import KFold
     X, y = df[base_cols].to_numpy(np.float32), df.target.to_numpy()
     for fold, (tr, va) in enumerate(KFold(n_folds, shuffle=True, random_state=0).split(X)):
-        model = fit_lgb(X[tr], y[tr], X[va], y[va])
-        rows.append({"fold": fold, "model": "LightGBM, shuffled K-fold CV", "rmspe": rmspe(y[va], model.predict(X[va]))})
+        record(fold, "LightGBM, shuffled K-fold CV",
+               lambda: rmspe(y[va], fit_lgb(X[tr], y[tr], X[va], y[va]).predict(X[va])))
 
     res = pd.DataFrame(rows)
-    out = ARTIFACTS_DIR / "optiver_rvp"
-    out.mkdir(parents=True, exist_ok=True)
     res.to_csv(out / "rvp_folds.csv", index=False)
     summary = res.groupby("model", sort=False).rmspe.agg(["mean", "std"]).reset_index()
     summary.to_csv(out / "rvp_summary.csv", index=False)
-    time_pos.to_csv(out / "recovered_time_order.csv")
     return summary
 
 

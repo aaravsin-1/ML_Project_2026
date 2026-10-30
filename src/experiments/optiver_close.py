@@ -117,25 +117,48 @@ def run_close_experiment() -> pd.DataFrame:
     print(f"[+] {len(cols)} features | train rows {tr.sum():,} | holdout rows {ho.sum():,} "
           f"({df.date_id[ho].nunique()} days)")
 
+    # Every training stage is checkpointed (predictions as .npy), so an interrupted run,
+    # here or on Colab with the synced artifacts folder, resumes after the last finished stage
+    out = ARTIFACTS_DIR / "optiver_close"
+    ckpt = out / "ckpt"
+    ckpt.mkdir(parents=True, exist_ok=True)
+
+    def cached(name: str, compute):
+        path = ckpt / f"{name}.npy"
+        if path.exists():
+            print(f"[+] {name}: loaded from checkpoint")
+            return np.load(path)
+        value = np.asarray(compute())
+        np.save(path, value)
+        print(f"[+] {name}: saved checkpoint")
+        return value
+
     # Use the last 40 training days for early stopping, then refit on all training days
     es = (df.date_id >= SPLIT_DAY - 40) & tr
-    probe = fit(X[tr & ~es], y[tr & ~es], X[es], y[es])
-    n_best = probe.best_iteration_ or 1500
-    static = fit(X[tr], y[tr], n_estimators=n_best)
-    pred_static = static.predict(X[ho])
+    n_best = int(cached("n_best", lambda: fit(X[tr & ~es], y[tr & ~es], X[es], y[es]).best_iteration_ or 1500))
+
+    def train_static():
+        static = fit(X[tr], y[tr], n_estimators=n_best)
+        imp = pd.Series(static.booster_.feature_importance("gain"), index=cols).sort_values(ascending=False)
+        (100 * imp / imp.sum()).head(30).rename("gain_share_pct").to_csv(out / "close_feature_importance.csv")
+        return static.predict(X[ho])
+
+    pred_static = cached("pred_static", train_static)
 
     # Online learning: retrain every RETRAIN_EVERY holdout days on everything seen so far
     pred_online = np.empty(ho.sum())
     ho_days = np.sort(df.date_id[ho].unique())
     ho_idx = np.nonzero(ho.to_numpy())[0]
-    model = static
-    for start in range(0, len(ho_days), RETRAIN_EVERY):
+    ho_dates = df.date_id.iloc[ho_idx].to_numpy()
+    for b, start in enumerate(range(0, len(ho_days), RETRAIN_EVERY)):
         block = ho_days[start:start + RETRAIN_EVERY]
-        if start > 0:
-            seen = (df.date_id < block[0]).to_numpy()
-            model = fit(X[seen], y[seen], n_estimators=n_best)
-        in_block = df.date_id.iloc[ho_idx].isin(block).to_numpy()
-        pred_online[in_block] = model.predict(X[ho_idx[in_block]])
+        in_block = np.isin(ho_dates, block)
+        if start == 0:
+            pred_online[in_block] = pred_static[in_block]
+            continue
+        seen = (df.date_id < block[0]).to_numpy()
+        pred_online[in_block] = cached(
+            f"online_block{b}", lambda: fit(X[seen], y[seen], n_estimators=n_best).predict(X[ho_idx[in_block]]))
 
     y_ho = y[ho]
     df_ho = df[ho]
@@ -146,11 +169,7 @@ def run_close_experiment() -> pd.DataFrame:
         {"model": f"LightGBM, retrained every {RETRAIN_EVERY} days + demean",
          "mae": np.mean(np.abs(y_ho - demean(df_ho, pred_online)))},
     ])
-    imp = pd.Series(static.booster_.feature_importance("gain"), index=cols).sort_values(ascending=False)
-    out = ARTIFACTS_DIR / "optiver_close"
-    out.mkdir(parents=True, exist_ok=True)
     res.to_csv(out / "close_holdout_results.csv", index=False)
-    (100 * imp / imp.sum()).head(30).rename("gain_share_pct").to_csv(out / "close_feature_importance.csv")
     return res
 
 
