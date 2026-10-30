@@ -18,3 +18,4 @@ fold,model,rmspe
 0,"LightGBM, shuffled K-fold CV",0.20865334505133712
 1,"LightGBM, shuffled K-fold CV",0.22349949148982118
 2,"LightGBM, shuffled K-fold CV",0.20479141398081116
+3,"LightGBM, shuffled K-fold CV",0.2199529252232141
