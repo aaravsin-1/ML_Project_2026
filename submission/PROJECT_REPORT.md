@@ -359,7 +359,8 @@ The practical recipe that falls out:
 
 ## Reproducibility
 
-- **Run everything:** `notebooks/colab_run_all.ipynb` on Colab (GPU steps); CPU experiments on a laptop (`README.md` → *Installation & Local Quickstart*).
+- **Final notebook:** [Final_Project_Notebook.ipynb](Final_Project_Notebook.ipynb) shows every experiment's results with explanations and runs a live demo; Run all takes a few minutes on Colab.
+- **Recompute everything:** `notebooks/colab_run_all.ipynb` on Colab (GPU steps); CPU experiments on a laptop (`README.md` → *Installation & Local Quickstart*).
 - **Tests:** `python -m pytest tests` (40 tests). Automatic result checks for Experiment K: `python scripts/check_microprice_results.py` (19 checks).
 - **Numbers in §5.2:** `python scripts/decompose_btc_edge.py` → `artifacts/btc/tradability/edge_decomposition.csv`.
 - **Figures:** `python scripts/make_real_data_figures.py`.

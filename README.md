@@ -24,7 +24,7 @@ Results come in two parts:
 
 On synthetic data (5 seeds), LightGBM is also the strongest model (macro-F1 0.584 ± 0.012). There the latency study shows that its edge over DeepLOB comes from better signals, not faster inference.
 
-**Final project report:** [submission/PROJECT_REPORT.md](submission/PROJECT_REPORT.md) summarises the project and argues how prediction accuracy, latency and trading costs together decide whether a signal pays. What this means in practice, including uses for intraday execution, is written up in [Project outcome and practical use](reports/Project%20outcome%20and%20practical%20use.md).
+**Final project report:** [submission/PROJECT_REPORT.md](submission/PROJECT_REPORT.md) summarises the project and argues how prediction accuracy, latency and trading costs together decide whether a signal pays. **Final notebook:** [submission/Final_Project_Notebook.ipynb](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/submission/Final_Project_Notebook.ipynb) walks through every experiment with its results; Run all takes a few minutes and includes a live demo of the pipeline. What this means in practice, including uses for intraday execution, is written up in [Project outcome and practical use](reports/Project%20outcome%20and%20practical%20use.md).
 
 ### Research spec coverage
 
@@ -645,10 +645,11 @@ ML_Project_2026/
 │   ├── decompose_btc_edge.py               # BTC round trip: signal vs delay vs crossing cost, break-even hit rate
 │   ├── check_microprice_results.py         # Automatic checks on Experiment K's results
 │   ├── lgbm_to_cpp.py                      # Trained LightGBM -> C++ code generator
-│   ├── build_and_execute_notebook.py       # Builds and runs the submission notebook
+│   ├── build_final_notebook.py             # Builds and runs the final submission notebook
+│   ├── build_and_execute_notebook.py       # Builds and runs the synthetic walkthrough notebook
 │   └── download_or_generate_data.py
-├── notebooks/colab_run_all.ipynb           # One-click Colab runner for everything
-├── submission/                             # Final project report, executed notebook, submission.csv
+├── notebooks/colab_run_all.ipynb           # One-click Colab runner that recomputes everything
+├── submission/                             # Final report, final notebook, synthetic walkthrough notebook, submission.csv
 ├── tests/
 ├── reports/                                # Project outcome and explainer write-ups
 ├── research_notes/                         # Literature and design notes

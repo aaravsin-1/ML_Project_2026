@@ -1,14 +1,17 @@
 # Final Submission
 
-**Start with the [final project report](PROJECT_REPORT.md).** It covers the question, data, method and results, and concludes on how prediction accuracy, latency and trading costs have to be balanced for a signal to pay. Full per-experiment results are in the [main README](../README.md).
+**Start with the [final project report](PROJECT_REPORT.md).** It covers the question, data, method and results, and concludes on how prediction accuracy, latency and trading costs have to be balanced for a signal to pay.
 
-This folder also holds a self-contained **Jupyter notebook walkthrough** of the pipeline on one synthetic session, with its out-of-sample predictions.
+**Then the [final notebook](Final_Project_Notebook.ipynb)** ([open in Colab](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/submission/Final_Project_Notebook.ipynb)). It documents every experiment with its results and runs a live demo of the pipeline; **Runtime → Run all** takes a few minutes and needs no GPU or credentials. Each experiment can be recomputed from the notebook's `RERUN` settings. Full per-experiment results are in the [main README](../README.md).
+
+This folder also holds an older, self-contained **notebook walkthrough** of the pipeline on one synthetic session, with its out-of-sample predictions.
 
 ---
 
 ## Folder Contents
 
 * **`PROJECT_REPORT.md`**: the final report.
+* **`Final_Project_Notebook.ipynb`**: the final notebook, executed, with all experiments documented. Rebuild it with `python scripts/build_final_notebook.py`.
 * **`LOB_Alpha_Prediction_Pipeline.ipynb`**:
   A fully executed Jupyter notebook with all outputs, markdown explanations, training trajectories, and evaluation dataframes populated.
 * **`submission.csv`**:
