@@ -1,7 +1,7 @@
 # High-Frequency Limit Order Book Alpha & Microstructure Execution Engine
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/notebooks/colab_run_all.ipynb)
-[![Tests](https://img.shields.io/badge/pytest-39%20tests-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-40%20tests-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](setup.py)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%20CUDA-orange.svg)](src/models/)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20%20SIMD-darkblue.svg)](cpp/)
@@ -24,7 +24,7 @@ Results come in two parts:
 
 On synthetic data (5 seeds), LightGBM is also the strongest model (macro-F1 0.584 ± 0.012). There the latency study shows that its edge over DeepLOB comes from better signals, not faster inference.
 
-What this means in practice, including uses for intraday execution, is written up in [Project outcome and practical use](reports/Project%20outcome%20and%20practical%20use.md).
+**Final project report:** [submission/PROJECT_REPORT.md](submission/PROJECT_REPORT.md) summarises the project and argues how prediction accuracy, latency and trading costs together decide whether a signal pays. What this means in practice, including uses for intraday execution, is written up in [Project outcome and practical use](reports/Project%20outcome%20and%20practical%20use.md).
 
 ### Research spec coverage
 
@@ -334,7 +334,19 @@ Each signal is traded as a round trip. The model enters with a taker order at th
 | Cost-aware | 60 s | 2% | 168 | 1.92 | **0.70** |
 | Cost-aware | 300 s | 100% | 123 | −0.52 | −1.19 |
 
-Confident signals do catch bigger moves (about 2 bp of mid move against 1 bp), but the spread eats most of them. The best gross edge is 0.70 bp, against 8 bp needed to break even at 4 bp per side. At 1 bp per side the best setting still nets −1.3 bp. Full grid: [tradability_summary.csv](artifacts/btc/tradability/tradability_summary.csv).
+Confident signals do catch bigger moves (about 2 bp of mid move against 1 bp), but execution eats most of them. The best gross edge is 0.70 bp, against 8 bp needed to break even at 4 bp per side. At 1 bp per side the best setting still nets −1.3 bp. Full grid: [tradability_summary.csv](artifacts/btc/tradability/tradability_summary.csv).
+
+**Where the edge goes.** [decompose_btc_edge.py](scripts/decompose_btc_edge.py) splits each round trip (direction labels, 20 s hold) into the edge at the decision mid, the cost of entering one snapshot (1 s) later, and the cost of crossing the spread and walking the book ([csv](artifacts/btc/tradability/edge_decomposition.csv)):
+
+| Coverage | Edge at decision mid | 1 s delay | Crossing | Gross | Hit rate | Break-even hit rate at 0 / 1 / 4 bp fee |
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 100% | 1.01 bp | −0.27 | −0.73 | 0.01 | 60.7% | 63% / 90% / over 100% |
+| 10% | 1.97 bp | −0.65 | −0.89 | 0.43 | 68.9% | 68% / 92% / over 100% |
+| 2% | 2.23 bp | −0.75 | −1.01 | 0.47 | 71.8% | 70% / 94% / over 100% |
+
+The quoted spread is only part of the crossing cost (about 0.2 bp per round trip on average); the rest is walking the book for 0.1 BTC. The most confident signals lose almost three times as much to the one-second delay as the average signal, because they predict the moves that come soonest. And the average absolute 20 s move on these rows is about 4.3 bp, so even a perfect direction forecast could not cover the 8 bp taker round trip. Break-even hit rate is 1/2 + cost / (2 × average absolute move); the [final report](submission/PROJECT_REPORT.md#52-where-exactly-does-the-edge-go) explains it.
+
+![Accuracy, latency and cost](artifacts/figures_real/accuracy_latency_balance.png)
 
 ![BTC tradability](artifacts/figures_real/btc_tradability.png)
 
@@ -615,11 +627,13 @@ ML_Project_2026/
 │   ├── make_real_data_figures.py           # Figures for the real-data results
 │   ├── benchmark_trained_model.py          # Trained LightGBM -> C++ codegen + benchmark
 │   ├── diagnose_fi2010_lightgbm.py         # Why FI-2010 LightGBM + history fails at k=20
+│   ├── decompose_btc_edge.py               # BTC round trip: signal vs delay vs crossing cost, break-even hit rate
+│   ├── check_microprice_results.py         # Automatic checks on Experiment K's results
 │   ├── lgbm_to_cpp.py                      # Trained LightGBM -> C++ code generator
 │   ├── build_and_execute_notebook.py       # Builds and runs the submission notebook
 │   └── download_or_generate_data.py
 ├── notebooks/colab_run_all.ipynb           # One-click Colab runner for everything
-├── submission/                             # Executed notebook + submission.csv
+├── submission/                             # Final project report, executed notebook, submission.csv
 ├── tests/
 ├── reports/                                # Project outcome and explainer write-ups
 ├── research_notes/                         # Literature and design notes
@@ -662,6 +676,7 @@ python scripts/run_all_experiments.py --source btc --segments 4
 python -m src.experiments.exp_e_tradability
 python -m src.experiments.exp_f_cross_asset
 python -m src.experiments.exp_g_regimes              # CPU, ~10 min
+python scripts/decompose_btc_edge.py                 # after exp_g: where the BTC edge goes (delay vs crossing)
 python -m src.experiments.exp_h_market_making        # CPU, ~2 min
 python -m src.experiments.exp_j_attribution          # CPU part; add --deeplob on a GPU first
 python -m src.experiments.exp_k_microprice           # CPU, ~1 h; then: python scripts/check_microprice_results.py
@@ -686,12 +701,12 @@ g++ -std=c++20 -O3 -march=native -ffast-math -I cpp/include cpp/src/main_benchma
 python -m pytest tests -v
 ```
 
-39 tests cover:
+40 tests cover:
 - feature formulas (OFI, micro-price, VPIN, BiN);
 - the pipeline fitting only on training rows, real VPIN, and the integer tick spread;
 - the purge gap;
 - the momentum baseline using only realized labels;
-- model forward passes;
+- model forward passes, and DeepLOB gradient attribution in eval mode (on the GPU in Colab, where cuDNN needs special handling);
 - spread crossing and book walking, including orders larger than the visible depth (extrapolate / partial / reject), zero- or NaN-padded levels and signed slippage;
 - trade-through passive fills;
 - timestamp-based latency;

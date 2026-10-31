@@ -115,7 +115,50 @@ def cross_asset():
     save(fig, "btc_eth_cross_asset.png")
 
 
+def accuracy_latency():
+    """Left: where the BTC edge goes (scripts/decompose_btc_edge.py). Right: synthetic P&L vs added latency."""
+    p = ARTIFACTS_DIR / "btc" / "tradability" / "edge_decomposition.csv"
+    sweep = ARTIFACTS_DIR / "experiment_d_latency_sharpe.csv"
+    if not (p.exists() and sweep.exists()):
+        return
+    d = pd.read_csv(p)
+    r = d[(d.signal == "direction") & (d.horizon_k == 20) & (d.coverage == 0.02)].iloc[0]
+    blue, orange, ink, muted = "#2a78d6", "#eb6834", "#0b0b0b", "#52514e"
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.4), gridspec_kw={"width_ratios": [1.15, 1]})
+
+    steps = [("Edge at\ndecision mid", r.edge_at_decision_mid_bps), ("React 1 s\nlater", -r.delay_cost_bps),
+             ("Cross spread,\nwalk book", -r.crossing_cost_bps), ("Taker fees\n(4 bp × 2)", -8.0)]
+    level = 0.0
+    for i, (name, v) in enumerate(steps):
+        bottom = level if v >= 0 else level + v
+        ax1.bar(i, abs(v), bottom=bottom, color=blue if v >= 0 else orange, width=0.62, edgecolor="white", linewidth=2)
+        ax1.annotate(f"{v:+.2f}", (i, max(level, level + v) + 0.25), ha="center", va="bottom", fontsize=9, color=ink)
+        level += v
+    ax1.bar(len(steps), abs(level), bottom=min(level, 0), color=muted, width=0.62, edgecolor="white", linewidth=2)
+    ax1.annotate(f"{level:+.2f}", (len(steps), 0.25), ha="center", va="bottom", fontsize=9, color=ink)
+    ax1.axhline(0, color=ink, lw=0.8)
+    ax1.set_xticks(range(len(steps) + 1), [s[0] for s in steps] + ["Net per\nround trip"], fontsize=8.5)
+    ax1.set_ylabel("bp per round trip")
+    ax1.set_ylim(min(level, 0) - 0.6, r.edge_at_decision_mid_bps + 1.2)
+    ax1.grid(axis="x", visible=False)
+    ax1.set_title(f"BTC, most confident 2% of signals, 20 s hold\n(hit rate {r.hit_rate_at_decision_mid:.0%}; "
+                  f"a perfect forecast would earn {r.mean_abs_move_bps:.1f} bp before fees)", fontsize=10)
+
+    s = pd.read_csv(sweep)
+    for col, name, color in (("pnl_LightGBM", "LightGBM", blue), ("pnl_DeepLOB", "DeepLOB", orange)):
+        ax2.plot(s.latency_ms, s[col], color=color, lw=2, marker="o", ms=5, label=name)
+        ax2.annotate(name, (s.latency_ms.iloc[-1], s[col].iloc[-1]), xytext=(-6, 8), textcoords="offset points",
+                     ha="right", fontsize=9, color=ink)
+    ax2.axhline(0, color=ink, lw=0.8)
+    ax2.set_xlabel("Added latency (ms)")
+    ax2.set_ylabel("Net P&L per test window ($)")
+    ax2.set_title("Synthetic large-tick book, aggressive taker\n(mean over 5 seeds)", fontsize=10)
+    ax2.legend(loc="upper right", frameon=False)
+    fig.suptitle("Profit needs accuracy, speed and low costs at once", fontsize=12)
+    save(fig, "accuracy_latency_balance.png")
+
+
 if __name__ == "__main__":
     set_plotting_style()
-    for fn in (btc_models, btc_profit, tradability, fi2010, cross_asset):
+    for fn in (btc_models, btc_profit, tradability, fi2010, cross_asset, accuracy_latency):
         fn()

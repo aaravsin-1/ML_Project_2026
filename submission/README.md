@@ -1,11 +1,14 @@
-# Quantitative Competition Submission Package
+# Final Submission
 
-This folder contains the complete, self-contained **Jupyter Notebook submission** and out-of-sample prediction results for high-frequency Limit Order Book (LOB) directional price trend forecasting.
+**Start with the [final project report](PROJECT_REPORT.md).** It covers the question, data, method and results, and concludes on how prediction accuracy, latency and trading costs have to be balanced for a signal to pay. Full per-experiment results are in the [main README](../README.md).
+
+This folder also holds a self-contained **Jupyter notebook walkthrough** of the pipeline on one synthetic session, with its out-of-sample predictions.
 
 ---
 
 ## Folder Contents
 
+* **`PROJECT_REPORT.md`**: the final report.
 * **`LOB_Alpha_Prediction_Pipeline.ipynb`**:
   A fully executed Jupyter notebook with all outputs, markdown explanations, training trajectories, and evaluation dataframes populated.
 * **`submission.csv`**:
