@@ -644,10 +644,9 @@ ML_Project_2026/
 │   ├── check_microprice_results.py         # Automatic checks on Experiment K's results
 │   ├── lgbm_to_cpp.py                      # Trained LightGBM -> C++ code generator
 │   ├── build_final_notebook.py             # Builds and runs the final submission notebook
-│   ├── build_and_execute_notebook.py       # Builds and runs the synthetic walkthrough notebook
 │   └── download_or_generate_data.py
 ├── notebooks/colab_run_all.ipynb           # One-click Colab runner that recomputes everything
-├── submission/                             # Final report, final notebook, synthetic walkthrough notebook, submission.csv
+├── submission/                             # Final report and final notebook
 ├── tests/
 ├── reports/                                # Project outcome and explainer write-ups
 ├── research_notes/                         # Literature and design notes
