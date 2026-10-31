@@ -10,18 +10,38 @@ A research framework for short-horizon price prediction from Limit Order Book (L
 
 Results come in two parts:
 - **Synthetic data** checks that the pipeline works and compares methods under controlled conditions. The [generator](src/data/synthetic_generator.py) plants the signal, so these results say nothing about real markets.
-- **Real data** tests whether any of it holds up. It covers Coinbase BTC-USD, FI-2010 and two Optiver Kaggle competitions.
+- **Real data** tests whether any of it holds up. It covers Coinbase BTC-USD, FI-2010, two Optiver Kaggle competitions, and one day of event-level Nasdaq data for five stocks (LOBSTER).
 
 **Headline findings on real data:**
 - **Direction is predictable, but only slightly.** On Coinbase BTC-USD (1 s snapshots, 20 s horizon), LightGBM reaches macro-F1 **0.467 ± 0.021**. Random guessing gets 0.333 and naive momentum 0.413. LightGBM beats DeepLOB (0.401) on all 4 segments.
-- **Predictable is not profitable.** The best filtered signal earns about **0.7 bp** per round trip after crossing the spread. A round trip at a 4 bp taker fee costs 8 bp, so every setting tested loses money after fees, even at 1 bp per side.
+- **Predictable is not profitable, in any regime.** The best filtered signal earns about **0.7 bp** per round trip after crossing the spread, against 8 bp for a round trip at a 4 bp taker fee. Splitting trades by VPIN, spread and volatility does not rescue it: the best regime earns about 1.4 bp before fees, and the edge is most consistent in *calm* markets, not toxic ones.
+- **Market making fails on BTC because its tick is tiny.** The spread is $0.01 on a ~$60,000 coin (0.0017 bp), so a market maker earns nothing for the adverse selection it absorbs. Naive two-sided quoting loses about $10,000 per day; an adverse-selection model cuts that by 86% or more but only breaks even under optimistic fill assumptions. On large-tick Nasdaq stocks, whether a fill makes money depends on queue position.
+- **Large-tick stocks are more predictable, and the signal peaks at 1–5 seconds.** On LOBSTER data (100 ms clock), learned models beat naive momentum on INTC and MSFT from 500 ms to 10 s (INTC at 5 s: macro-F1 0.457 vs 0.344), but mostly do not on the small-tick AMZN and GOOG. At 100 ms the mid price of a large-tick stock almost never moves, so there is nothing to predict.
 - **Simple models match deep learning only at short horizons.** On FI-2010 (3 seeds), logistic regression with lagged price history beats our DeepLOB at k = 10 (86.1% vs 83.1 ± 0.3% accuracy) and k = 20 (78.3% vs 74.1 ± 0.5%). DeepLOB wins clearly at k = 50 and k = 100.
 - **Leakage inflates published results, and we measured by how much.** On Optiver Realized Volatility, the 1st-place nearest-neighbour features keep only about **59%** of their gain once neighbours are restricted to the past.
-- **Ethereum's order book helps predict Bitcoin a little.** Macro-F1 improves by +0.016 at 10 s on all 4 segments, and the gain fades with horizon.
+- **Ethereum's order book helps predict Bitcoin a little** (+0.016 macro-F1 at 10 s, all 4 segments). LightGBM's edge over the baselines is statistically significant (block bootstrap), but over Random Forest it is tiny (+0.004).
 
 On synthetic data (5 seeds), LightGBM is also the strongest model (macro-F1 0.584 ± 0.012). There the latency study shows that its edge over DeepLOB comes from better signals, not faster inference.
 
 What this means in practice, including uses for intraday execution, is written up in [Project outcome and practical use](reports/Project%20outcome%20and%20practical%20use.md).
+
+### Research spec coverage
+
+How the original research plan ([project_research.md](project_research.md)) maps onto the experiments:
+
+| Spec section | What it asks | Where it is answered | Status |
+|:---|:---|:---|:---|
+| 1 | Large-tick vs small-tick predictability | [LOBSTER](#lobster-nasdaq-event-data-large--vs-small-tick-stocks-experiment-i), [BTC market making](#btc-market-making-with-an-adverse-selection-model-experiment-h) | Done |
+| 2 | FI-2010, LOBSTER, crypto data; leak-free normalization | All real-data sections; train-only fitting | Done |
+| 3 | OFI, multi-level OFI + PCA, VPIN, micro-price, event trajectory | Feature pipeline; order-flow features in Experiments H and I | Done. Micro-price divergence as a separate *target* not tested |
+| 4.1 / 5.2 | Horizons from 100 ms to 30 s and the decay curve | Synthetic B, BTC B (10–100 s), LOBSTER (100 ms–30 s) | Done |
+| 4.2 | Model ladder, tiers 0–5 | Synthetic and BTC Experiment A; FI-2010; LOBSTER (tabular models) | Done |
+| 5.1 | Beat the baselines, significantly; confusion matrices | BTC A, [Experiment J](#btc-attribution-and-significance-experiment-j) | Done for tabular models; DeepLOB comparison pending a Colab run |
+| 5.3 | Ablation and SHAP/LIME attribution | Experiment C, Experiment J (TreeSHAP) | Done for LightGBM; DeepLOB attribution pending a Colab run; LIME not used |
+| 6.1 | Spread crossing, fees, book walking, latency | Experiments D and E, execution simulator | Done |
+| 6.2 | Passive fills, adverse selection, VPIN-based market making | Experiments H and I | Done |
+| 7 | Low-latency C++ system | [C++ benchmark](#c20-latency-benchmark): compiled trained model, AVX2 features, latency benchmarks. Feed handling, order book engine, kernel bypass: [cpp/LEARNING_PATH.md](cpp/LEARNING_PATH.md) | In progress |
+| 8 | Regimes where the edge survives | [Experiment G](#btc-does-the-edge-survive-in-any-regime-experiment-g) | Done: none found |
 
 ---
 
@@ -228,13 +248,14 @@ Interpretation: both models lose about the same amount per millisecond of latenc
 
 ## Real-Data Results
 
-The real datasets are wired in and tested. Their full runs need a GPU and several hours, so they run on [Colab](#running-on-google-colab). Download them with `python scripts/fetch_datasets.py`.
+The real datasets are wired in and tested. Runs that train deep models need a GPU and several hours, so they run on [Colab](#running-on-google-colab). The tabular and simulation experiments (G, H, I, and part 1 of J) run on a laptop CPU in minutes. Download the Kaggle datasets with `python scripts/fetch_datasets.py`.
 
 | Dataset | Source | What the experiment does |
 |:---|:---|:---|
 | **Coinbase BTC-USD**, 15-level book, 1 s snapshots, ~12 days (Apr 2021) | [Kaggle, CC0](https://www.kaggle.com/datasets/martinsn/high-frequency-crypto-limit-order-book-data) | Reruns Experiments A–D on 4 contiguous ~3-day segments. Labels use a per-horizon threshold calibrated on training rows only (one third FLAT). VPIN comes from the real signed buy/sell volume. Execution uses Coinbase's top-tier fees (0 bp maker, 4 bp taker), 0.1 BTC lots, and a latency sweep in whole seconds (the book is only observed once a second). `python scripts/run_all_experiments.py --source btc`. Follow-ups: `python -m src.experiments.exp_e_tradability`, `python -m src.experiments.exp_f_cross_asset` |
 | **FI-2010**, Setup 2 | [Kaggle mirror](https://www.kaggle.com/datasets/ulfricirons/fi-2010) of Ntakaris et al. (2018) | Trains on days 1–7 and tests on days 8–10. Compares our DeepLOB, LightGBM, logistic regression and baselines with the published DeepLOB numbers (84.47% accuracy / 83.40% weighted-F1 at k = 10). `python -m src.experiments.fi2010_benchmark` |
 | **Optiver Realized Volatility** (Kaggle 2021) | [competition](https://www.kaggle.com/competitions/optiver-realized-volatility-prediction) | Book/trade volatility features. Recovers the shuffled time order with the [1st-place](https://www.kaggle.com/competitions/optiver-realized-volatility-prediction/writeups/nyanp-1st-place-solution-nearest-neighbors) tick-size + t-SNE trick, then validates forward in time. Compares the winner's nearest-neighbor features as published (neighbors drawn from all time windows, including future ones) with a past-only version, plus shuffled K-fold CV for contrast. `python -m src.experiments.optiver_rvp` |
+| **LOBSTER sample files**: INTC, MSFT, AAPL, AMZN, GOOG, 21 June 2012, 9:30–16:00, 10 levels, every order event | [lobsterdata.com](https://lobsterdata.com) (free samples for academic use; not redistributed, so not on Kaggle) | Resampled onto a 100 ms clock. Decay curve at 100 ms–30 s, large- vs small-tick stocks, order-flow features, market making with execution-exact fills. Unzip the 10-level files into `data/raw/lobster/` and run `python -m src.experiments.exp_i_lobster` locally |
 | **Optiver Trading at the Close** (Kaggle 2023) | [competition](https://www.kaggle.com/competitions/optiver-trading-at-the-close) | Auction-imbalance features, including the [1st-place](https://www.kaggle.com/competitions/optiver-trading-at-the-close/writeups/hyd-1st-place-solution) seconds-group and cross-sectional rank features. Uses the winner's split (first 400 days train, last 81 days holdout) and compares a model trained once with one retrained every 12 days. `python -m src.experiments.optiver_close` |
 
 The Optiver data is competition data: accept each competition's rules on kaggle.com once before downloading.
@@ -330,6 +351,112 @@ The gain is small but consistent, and it fades with horizon. That pattern fits E
 
 ![ETH to BTC](artifacts/figures_real/btc_eth_cross_asset.png)
 
+### BTC: does the edge survive in any regime? (Experiment G)
+
+Spec section 8 asks for market regimes where the edge survives costs, for example periods of toxic order flow. This experiment splits Experiment E's trades by terciles of three variables known at decision time: VPIN, the quoted spread, and realized volatility over the previous 60 s. Cut-offs come from each segment's training rows. Each cell is a strategy that trades only inside that regime. Gross is bp per round trip after the spread, before fees; the 95% CI is a moving-block bootstrap over the pooled trades of all 4 segments ([full table](artifacts/btc/regimes/regime_tradability.csv)).
+
+| Signal (coverage) | Regime | Trades | Gross (bp) | 95% CI | Segments gross > 0 |
+|:---|:---|:---:|:---:|:---:|:---:|
+| Direction, all signals | low volatility | 1,980 | +0.46 | 0.28 to 0.65 | 4/4 |
+| Direction, all signals | high volatility | 3,065 | −0.45 | −0.68 to −0.23 | 0/4 |
+| Direction, top 2% | low volatility | 413 | +1.08 | 0.73 to 1.47 | 4/4 |
+| Direction, top 2% | high VPIN | 676 | +0.50 | −0.02 to 1.02 | 3/4 |
+| Cost-aware, top 2% | high VPIN | 336 | **+1.43** | 0.24 to 2.84 | 3/4 |
+| Cost-aware, top 2% | low volatility | 193 | +1.32 | 0.49 to 2.54 | 3/4 |
+
+- **No regime survives costs.** The best cell earns +1.43 bp gross. At 1 bp fee per side (2 bp per round trip) it still nets −0.57 bp, and at the 4 bp taker fee a round trip needs 8 bp.
+- **The edge is most consistent in calm markets.** Low volatility is positive before fees at every coverage, on all 4 segments, for the direction model. It is also where predictability is highest (macro-F1 0.483 vs 0.443 in high volatility).
+- **Toxic flow does not help.** Macro-F1 is the same in every VPIN tercile (0.467–0.468), and high VPIN is the best cell for only one of the two models. The spec's idea that toxicity regimes are where the edge survives is not supported here.
+- The table covers 54 cells, so a few confidence intervals will exclude zero by chance. The low-volatility result holds across coverages, segments and both models.
+
+### BTC: market making with an adverse-selection model (Experiment H)
+
+Spec section 6.2 proposes earning the spread with resting quotes, and modelling the adverse selection those quotes suffer. For every snapshot, the experiment labels a hypothetical 0.1 BTC quote at the touch on each side (resting up to 30 s) with whether it fills and its markout: the mid price 30 s after the fill relative to the fill price. LightGBM learns the value of posting from the microstructure features plus new order-flow features (limit, market and cancel notional per level). Three strategies then quote both sides with a ±0.5 BTC inventory limit:
+- **always:** quote both sides all the time;
+- **rule:** the spec's Scenario A/B: quote when the spread is at least its training median and VPIN is below its training 67th percentile, and cancel when VPIN exceeds its 90th percentile;
+- **model:** quote a side only when the predicted value of posting clears a threshold chosen on validation data.
+
+One-second snapshots cannot show queue position, so each strategy runs under three fill rules that bracket the truth. *Pessimistic* fills only when the price trades through the quote. *Queue* fills once recorded market flow at the quote's price exceeds the resting size ahead of it. *Optimistic* assumes the front of the queue. Net P&L per test window (about 10.7 h), mean ± std over 4 segments, 0 bp maker fee, leftover inventory closed at the 4 bp taker fee ([csv](artifacts/btc/market_making/mm_summary.csv)):
+
+| Strategy | Pessimistic | Queue | Optimistic | Segments > 0 |
+|:---|:---:|:---:|:---:|:---:|
+| always | −$4,677 ± 57 | −$4,638 ± 68 | −$4,509 ± 115 | 0/4 under every rule |
+| rule (spec Scenario A/B) | −$1,562 ± 1,033 | −$1,562 ± 1,019 | −$1,445 ± 1,103 | 0/4 |
+| model | −$670 ± 778 | −$501 ± 818 | +$81 ± 718 | 0, 1 and 2 of 4 |
+
+- **Naive quoting loses about $10,400 per day.** The average fill loses 1.7–1.9 bp 30 s later under the pessimistic and queue rules, and 0.6–0.8 bp even at the front of the queue.
+- **The spec's rule cuts losses by about two thirds; the model by 86% or more,** but the model only breaks even under the optimistic rule, and that result is indistinguishable from zero.
+- **Adverse selection is only weakly predictable.** Given a fill, a LightGBM classifier tells toxic fills (negative markout) from good ones with an AUC of 0.55–0.58.
+- **VPIN does not sort fills.** Markouts by VPIN tercile show no consistent pattern; low-VPIN bid fills are the worst (−2.25 bp under the pessimistic rule).
+- **Why it fails:** BTC trades in $0.01 steps at about $60,000, so the spread is 0.0017 bp and sits at one tick 80% of the time. A typical one-second move is 0.5 bp. There is no spread to earn, only adverse selection to absorb. This is spec section 1's small-tick case, measured.
+- The Coinbase per-level market-order columns add up to only about 30–40% of the traded volume, so the queue rule here behaves almost like the pessimistic one. The fill rules are bounds, not estimates.
+
+### LOBSTER: Nasdaq event data, large- vs small-tick stocks (Experiment I)
+
+LOBSTER's free sample files contain every order event for five Nasdaq stocks on 21 June 2012 (10 levels, 9:30–16:00). The experiment resamples them onto a 100 ms clock, which makes the spec's horizons (100 ms to 30 s) possible on real data. The stocks fall cleanly into the two regimes of spec section 1:
+
+| | Tick as share of price | Spread at one tick | Median shares at best level | Mid-price changes per minute |
+|:---|:---:|:---:|:---:|:---:|
+| INTC, MSFT (large tick) | 3.3–3.7 bp | 77% of the time | ~13,000 | 8–10 |
+| AAPL, AMZN, GOOG (small tick) | 0.17–0.45 bp | under 1% | ~100 | 60–165 |
+
+**Decay curve.** Best learned model (logistic regression, LightGBM, or LightGBM with order-flow features) minus naive momentum, macro-F1 on the test period ([full table](artifacts/lobster/lobster_prediction.csv)):
+
+| Stock | 100 ms | 500 ms | 1 s | 5 s | 10 s | 30 s |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|
+| INTC (large) | −0.004 | +0.019 | +0.050 | **+0.113** | +0.098 | −0.025 |
+| MSFT (large) | −0.005 | +0.036 | **+0.071** | +0.042 | +0.008 | +0.008 |
+| AAPL (small) | −0.020 | +0.022 | +0.019 | +0.003 | +0.027 | +0.059 |
+| AMZN (small) | −0.066 | −0.047 | −0.008 | −0.042 | −0.029 | −0.022 |
+| GOOG (small) | −0.085 | −0.040 | −0.027 | −0.035 | −0.036 | +0.009 |
+
+- **Large-tick stocks are more predictable**, as the spec expects. On INTC and MSFT the learned models beat momentum from 500 ms to 10 s, peaking at 1–5 s (INTC at 5 s: 0.457 vs 0.344).
+- **Nothing is predictable at 100 ms on large-tick stocks** because the mid price almost never moves: 99% of INTC's and MSFT's 100 ms test labels are FLAT. The spec expected the peak in the sub-second range; on this data it comes later.
+- **On small-tick stocks the learned models mostly lose to naive momentum** (AMZN and GOOG at almost every horizon). Their books change so fast that the last move is a strong baseline.
+- **Order-flow features help only small-tick stocks:** adding limit, market and cancel flows to LightGBM gains +0.011 macro-F1 on average for AAPL, AMZN and GOOG, and −0.003 for INTC and MSFT.
+
+**Market making.** Experiment H's setup with 100-share lots, a ±500-share inventory limit, quotes resting up to 30 s, and Nasdaq-style 2012 pricing (assumed 0.30 cents per share to take liquidity, a 0.20 cent rebate to provide it). LOBSTER records every execution with its price, so the queue rule is exact except for cancellations ahead in the queue. Mean markout per fill 30 s later, in bp after the rebate ([csv](artifacts/lobster/lobster_adverse_selection.csv)):
+
+| Stock | Pessimistic | Queue | Optimistic (front of queue) |
+|:---|:---:|:---:|:---:|
+| INTC (large) | −2.22 | −2.15 | +1.24 |
+| MSFT (large) | −1.78 | −1.78 | +0.70 |
+| AAPL (small) | +0.14 | +0.17 | +0.21 |
+| AMZN (small) | +0.52 | +0.55 | +0.67 |
+| GOOG (small) | −0.13 | −0.03 | +0.03 |
+
+- **On large-tick stocks, queue position decides everything.** A fill at the front of the queue earns +0.7 to +1.2 bp (about 0.7 bp of that is the rebate on INTC); a fill at the back loses about 2 bp. With ~13,000 shares queued at the best price, a newly posted order is nearly always at the back, so the queue rule matches the pessimistic one. This is why high-frequency firms compete for queue priority.
+- **On small-tick stocks the touch is often wide** (13–30 ticks on average), so joining it can earn a little: AMZN and AAPL fills are slightly positive under every rule.
+- **Adverse selection is not predictable here** (AUC 0.39–0.53), and the dollar P&L comes from a single test window of about one hour dominated by inventory moves, so it is illustrative only ([csv](artifacts/lobster/lobster_market_making.csv)).
+- One day per stock, and the test period is the last hour of the session, which trades differently from the rest of the day. Treat all LOBSTER numbers as a single-day case study.
+
+### BTC: attribution and significance (Experiment J)
+
+Spec sections 5.1 and 5.3 ask whether improvements over the baselines are statistically significant, and for SHAP-style attribution. Experiment J retrains Experiment A's tabular models on each BTC segment (k = 20 s) with the same settings and keeps their per-row test predictions.
+
+**Significance** of LightGBM's macro-F1 advantage, pooled over the 4 segments. The CI is a moving-block bootstrap (5-minute blocks, segments resampled separately); McNemar's test compares which rows each model gets right ([csv](artifacts/btc/attribution/significance_vs_lightgbm.csv)):
+
+| LightGBM vs | Macro-F1 difference | 95% CI | Segments LightGBM better | McNemar p |
+|:---|:---:|:---:|:---:|:---:|
+| Naive momentum | +0.059 | 0.050 to 0.068 | 4/4 | < 0.0001 |
+| Logistic regression | +0.019 | 0.015 to 0.024 | 4/4 | < 0.0001 |
+| Random Forest | +0.004 | 0.001 to 0.007 | 3/4 | 0.015 |
+
+LightGBM is significantly better than all three, but its edge over Random Forest is tiny. DeepLOB's predictions come from a GPU run; the Colab notebook's `deeplob_attribution` step retrains it, saves its predictions and gradient-based attribution, and adds it to this table.
+
+**TreeSHAP** (exact, from LightGBM's `pred_contrib`, on 20,000 test rows per segment), share of mean |SHAP| by feature group, next to Experiment C's gain shares ([groups](artifacts/btc/attribution/shap_lightgbm_groups.csv), [features](artifacts/btc/attribution/shap_lightgbm_features.csv)):
+
+| Feature group | SHAP share | Gain share |
+|:---|:---:|:---:|
+| Deeper book (slopes, L5/L10 imbalance, OFI PCA) | 39.3% | 47.1% |
+| L1 lags (OFI, imbalance, micro-price) | 34.6% | 25.2% |
+| L1 snapshot | 14.1% | 13.6% |
+| VPIN | 6.6% | 9.7% |
+| Levels 2–3 | 5.4% | 4.5% |
+
+- SHAP gives the recent history of level-1 signals much more weight than gain importance did (35% vs 25%), which fits the ablation (lags were the biggest single addition). The book-shape features still lead, led by `slope_ask` (12.3%) and `slope_bid` (11.8%).
+- **Confusion matrices** ([csv](artifacts/btc/attribution/confusion_matrices.csv)): FLAT is the hardest class for every model. LightGBM recalls 40% of FLAT, 50% of UP and 52% of DOWN rows; naive momentum 39%, 44% and 42%. Errors are spread fairly evenly across the other two classes, so no model is simply calling one direction.
+
 ### FI-2010 Setup 2
 
 The models train on days 1–7 and are tested on days 8–10. Accuracy (%), mean ± std over 3 training seeds:
@@ -418,6 +545,8 @@ Throughput: about 399k snapshots/s, including timing overhead.
 ML_Project_2026/
 ├── README.md
 ├── cpp/                                    # C++20 latency benchmark & SIMD tutorial
+│   ├── LEARNING_PATH.md                    # Self-study path: CPU basics to kernel bypass and tick-to-trade
+│   └── labs/                               # Runnable experiments for the learning path (labs 01-08)
 ├── src/
 │   ├── config.py
 │   ├── data/
@@ -425,7 +554,9 @@ ML_Project_2026/
 │   │   ├── lob_dataset.py                  # Purged splits, indexed sequence loaders
 │   │   ├── normalizers.py                  # Decimal, causal rolling z, BiN
 │   │   ├── purged_cv.py                    # Purged & embargoed CV
-│   │   └── fi2010_loader.py / lobster_loader.py / crypto_loader.py
+│   │   ├── lobster_loader.py               # LOBSTER files; one day resampled onto a fixed clock
+│   │   ├── crypto_loader.py                # Coinbase snapshots, trade tape, per-level order flows
+│   │   └── fi2010_loader.py
 │   ├── microstructure/                     # OFI, VPIN, micro-price, feature pipeline
 │   ├── models/                             # Baselines, RF, LightGBM, LSTM, DeepLOB, TLOB, trainer
 │   ├── execution/                          # Simulator, strategies, performance metrics
@@ -434,6 +565,10 @@ ML_Project_2026/
 │   │   ├── exp_a ... exp_d                 # Experiments A-D
 │   │   ├── exp_e_tradability.py            # BTC: confidence filtering, cost-aware labels
 │   │   ├── exp_f_cross_asset.py            # BTC: does ETH's book help?
+│   │   ├── exp_g_regimes.py                # BTC: does the edge survive in any regime?
+│   │   ├── exp_h_market_making.py          # BTC: market making with an adverse-selection model
+│   │   ├── exp_i_lobster.py                # LOBSTER: decay curve, tick regimes, market making
+│   │   ├── exp_j_attribution.py            # BTC: TreeSHAP, significance tests, DeepLOB attribution
 │   │   ├── fi2010_benchmark.py             # FI-2010 Setup 2 vs published DeepLOB
 │   │   ├── optiver_rvp.py                  # Optiver Realized Volatility (forward CV, NN features)
 │   │   └── optiver_close.py                # Optiver Trading at the Close (date split, retraining)
@@ -454,7 +589,7 @@ ML_Project_2026/
 ├── tests/
 ├── reports/                                # Project outcome and explainer write-ups
 ├── research_notes/                         # Literature and design notes
-└── artifacts/                              # CSVs and figures (btc/, fi2010/, optiver_*/, figures_real/)
+└── artifacts/                              # CSVs and figures (btc/, fi2010/, lobster/, optiver_*/, figures_real/)
 ```
 
 ---
@@ -467,6 +602,8 @@ The heavy runs (BTC, FI-2010, Optiver) need a GPU and several hours, so they are
 2. Add your Kaggle API key as two Colab **Secrets** (🔑 panel): `KAGGLE_USERNAME` and `KAGGLE_KEY`. The values are in the `kaggle.json` from *kaggle.com → Settings → API → Create New Token*.
 3. For the Optiver data, accept both competitions' rules on kaggle.com with the same account.
 4. If the repo is private, also add a `GITHUB_TOKEN` secret with read access.
+
+The notebook also has steps for Experiments G and H (CPU, usually already run on the laptop) and for Experiment J's DeepLOB part, which needs the GPU. The LOBSTER experiment (I) is not in the notebook because its data is not on Kaggle; it runs locally.
 
 Results and checkpoints go to Google Drive (`MyDrive/ML_Project_2026/artifacts`). Every long run checkpoints after each segment or horizon, so after a disconnect you just rerun the setup cells and the experiment cell. The last cell downloads the results as a zip to unzip into `artifacts/` locally.
 
@@ -490,6 +627,10 @@ python scripts/fetch_datasets.py                # needs Kaggle API credentials
 python scripts/run_all_experiments.py --source btc --segments 4
 python -m src.experiments.exp_e_tradability
 python -m src.experiments.exp_f_cross_asset
+python -m src.experiments.exp_g_regimes              # CPU, ~10 min
+python -m src.experiments.exp_h_market_making        # CPU, ~2 min
+python -m src.experiments.exp_j_attribution          # CPU part; add --deeplob on a GPU first
+python -m src.experiments.exp_i_lobster              # needs LOBSTER files in data/raw/lobster/
 python -m src.experiments.fi2010_benchmark
 python -m src.experiments.optiver_close
 python -m src.experiments.optiver_rvp
@@ -531,7 +672,10 @@ The model, feature and extension tests need PyTorch. The simulator and validatio
 ## Known Limitations
 
 - **Small real-data sample.** The BTC data is about 12 days from one exchange, split into 4 segments, so error bars are wide.
-- **Coarse BTC data.** It has 1-second snapshots and no individual order events or queue positions, so passive fills are approximate and sub-second effects are invisible.
+- **Coarse BTC data.** It has 1-second snapshots and no individual order events or queue positions, so passive fills are approximate and sub-second effects are invisible. Its per-level market-order columns cover only about 30–40% of traded volume.
+- **Fill rules are bounds.** Experiments H and I report pessimistic, queue and optimistic fills because queue position is not observed. The truth lies somewhere between them.
+- **LOBSTER is one day.** Five stocks on one day, with the test period in the last hour of the session. Its results are a case study, not a general estimate.
+- **Many comparisons in Experiment G.** 54 regime cells were tested, so a few confidence intervals exclude zero by chance; only results that hold across coverages, segments and models are reported as findings.
 - **FI-2010 regime shift.** The test days are calmer than the training days, and the validation days don't reveal it, so models that are sensitive to volatility (LightGBM on raw history features) are understated there (see [FI-2010](#fi-2010-setup-2)).
 - **No persistent impact.** Our own orders walk the snapshot they arrive on, but they do not deplete the book in later snapshots.
 - **Simple strategies.** Experiment D sends one lot per signal up to an inventory cap. Experiment E adds confidence filtering and fixed-hold round trips, but there is no position sizing and no smarter exit logic.
