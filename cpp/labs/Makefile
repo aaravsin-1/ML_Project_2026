@@ -9,7 +9,7 @@ CXXFLAGS ?= -std=c++20 $(OPT) -march=native -g -Wall -Wextra
 B        := build
 
 LABS := lab01_memory_hierarchy lab02_data_layout lab03_branch_prediction lab04_timers_and_dce \
-        lab05_noise_and_jitter lab06_simd_ofi
+        lab05_noise_and_jitter lab06_simd_ofi lab08_parallel_scaling
 
 all: $(addprefix $(B)/,$(LABS)) $(B)/lab03_branch_prediction_O3 $(B)/lab06_simd_ofi_fastmath
 
@@ -23,6 +23,10 @@ $(B)/lab03_branch_prediction: lab03_branch_prediction.cpp common.hpp | $(B)
 	$(CXX) $(subst $(OPT),-O2,$(CXXFLAGS)) $(NOBRANCHOPT) $< -o $@
 $(B)/lab03_branch_prediction_O3: lab03_branch_prediction.cpp common.hpp | $(B)
 	$(CXX) $(subst $(OPT),-O3,$(CXXFLAGS)) $< -o $@
+
+# Lab 08 needs OpenMP
+$(B)/lab08_parallel_scaling: lab08_parallel_scaling.cpp common.hpp | $(B)
+	$(CXX) $(CXXFLAGS) -fopenmp $< -o $@
 
 $(B)/lab06_simd_ofi_fastmath: lab06_simd_ofi.cpp common.hpp ../include/features_avx2.hpp | $(B)
 	$(CXX) $(CXXFLAGS) -ffast-math $< -o $@

@@ -10,7 +10,7 @@ Coinbase websocket feed with sadighian/crypto-rl. Each row is a snapshot with:
 """
 
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Dict, Tuple, Union
 import numpy as np
 import pandas as pd
 
@@ -90,3 +90,33 @@ class CryptoLOBLoader:
             np.savez(cache_path, lob_40=lob_40, timestamps_ms=timestamps_ms,
                      **{f"trade_{c}": trades[c].to_numpy() for c in trades.columns})
         return lob_40, timestamps_ms, trades
+
+    @staticmethod
+    def load_order_flows(
+        file_path: Union[str, Path],
+        num_levels: int = 5,
+        cache: bool = True
+    ) -> Dict[str, np.ndarray]:
+        """Per-level order flow since the previous snapshot, in USD notional.
+
+        Returns a dict with keys "{bids,asks}_{limit,market,cancel}", each (N, num_levels).
+        Level x refers to the x-th price level of the CURRENT snapshot, so "bids_market"
+        at level 0 is market selling that hit the best bid during the last interval.
+
+        Coverage caveat: summed over all 15 levels, the market columns account for only
+        about 30-40% of the snapshot's `buys`/`sells` notional (checked on BTC, April 2021),
+        so fill models built on them understate how much trades at a level.
+        """
+        path = Path(file_path)
+        cache_path = path.with_suffix(f".flows.L{num_levels}.npz")
+        keys = [f"{side}_{kind}" for side in ("bids", "asks") for kind in ("limit", "market", "cancel")]
+        if cache and cache_path.exists() and cache_path.stat().st_mtime >= path.stat().st_mtime:
+            z = np.load(cache_path)
+            return {k: z[k] for k in keys}
+        cols = [f"{k}_notional_{lvl}" for k in keys for lvl in range(num_levels)]
+        df = pd.read_csv(path, usecols=cols)
+        flows = {k: np.stack([df[f"{k}_notional_{lvl}"].to_numpy(dtype=np.float64) for lvl in range(num_levels)],
+                             axis=1) for k in keys}
+        if cache:
+            np.savez(cache_path, **flows)
+        return flows

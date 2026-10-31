@@ -1,6 +1,6 @@
 # Hands-on labs
 
-Small programs you build, run, change and break, to see low-latency effects on your own machine instead of reading about them. They are the practical half of [LEARNING_PATH.md](../LEARNING_PATH.md). Labs 01–07 come with code. From stage 5 on you write the code yourself, following the step-by-step milestones in the learning path.
+Small programs you build, run, change and break, to see low-latency effects on your own machine instead of reading about them. They are the practical half of [LEARNING_PATH.md](../LEARNING_PATH.md). Labs 01–08 come with code. From stage 5 on (apart from lab 08) you write the code yourself, following the step-by-step milestones in the learning path.
 
 ## How to work through a lab
 
@@ -18,7 +18,7 @@ The numbers under *What you should see* were measured on your laptop (Ryzen 5 56
 
 ```bash
 cd cpp/labs
-make            # builds labs 01-06 into build/  (make clean to start over)
+make            # builds labs 01-06 and 08 into build/  (make clean to start over)
 ```
 
 `make CXX=clang++` builds everything with Clang instead. Comparing the two compilers is a good extra experiment for any lab.
@@ -194,7 +194,7 @@ Part B: **B1 0.00 ns**. The compiler deleted the whole loop because nothing used
 - Add load. In a second terminal: `for i in 1 2 3 4; do yes > /dev/null & done`. Run with and without `--core=3`. Then `killall yes`.
 - Unplug the laptop charger (power-saving mode), then plug it back in.
 - Run while Firefox scrolls a heavy page.
-- Advanced (stage 10): boot with `isolcpus=3 nohz_full=3`, rerun with `--core=3`, and compare the gap counts.
+- Advanced (stage 11): boot with `isolcpus=3 nohz_full=3`, rerun with `--core=3`, and compare the gap counts.
 
 **Explain**
 - Which percentile changed the most across conditions, and which barely moved? Why is that a problem for anyone who only reports averages?
@@ -292,7 +292,43 @@ Exactness: **max |diff| 0 and 100% class agreement** on all 20,000 rows. Latency
 
 ---
 
-## After lab 07
+## Lab 08: Parallel scaling
+
+**Goal:** see when more cores help and when they stop helping, see false sharing at full scale, and compare latency with throughput for the same computation. Part of [stage 9](../LEARNING_PATH.md#stage-9-parallelism-and-throughput); do it after stage 8.
+
+**Predict**
+1. Your CPU has 6 cores and 12 hardware threads. For compute-heavy work, what speedup do you expect at 6 threads, and at 12?
+2. For the light work (a few arithmetic operations per 448-byte book, 1.8 GB of books), will 12 threads be 12x faster?
+3. Eight threads each increment their own counter. In one version the counters sit next to each other in memory; in the other each has its own cache line. How big is the difference?
+4. One book takes about 2.3 µs on one core. What does it cost per book when a whole batch runs on all 12 threads?
+
+**Run**
+```bash
+./build/lab08_parallel_scaling --work=heavy
+./build/lab08_parallel_scaling --work=light
+./build/lab08_parallel_scaling --mode=false_sharing
+./build/lab08_parallel_scaling --mode=latency_vs_batch
+```
+
+**Break it**
+- `--schedule=dynamic` with heavy work. Faster or slower than static? Make the work uneven (for example, heavy only for every tenth book) and try again: when does dynamic scheduling win?
+- Pin the threads: `OMP_PROC_BIND=close OMP_PLACES=cores ./build/lab08_parallel_scaling --work=heavy`, then `OMP_PLACES=threads`. What changes at 7–12 threads, and why?
+- Plot speedup against threads for both kinds of work and fit Amdahl's law to the heavy curve.
+- In `--mode=false_sharing`, change `alignas(64)` to `alignas(32)` and `alignas(128)`. Which still shows the problem?
+
+**Explain**
+- Why does the memory-bound loop stop scaling? (Lab 01 told you what one core sees; what is shared between cores?)
+- Why is 12 threads slower than 11 for the heavy work?
+- When is the latency number the right one to optimize, and when is the throughput number?
+
+<details><summary>What you should see</summary>
+
+Heavy (compute-bound): **6.7x at 11 threads (61% efficiency), 6.4x at 12**. Speedup grows roughly linearly up to the 6 physical cores, then more slowly as the two threads on each core share its execution units, and the 12th thread competes with the OS. Light (memory-bound): **1.4x at best, already at 3 threads**. The cores wait on the shared memory bus, so more threads only add contention. False sharing: **2,038 ms packed vs 25 ms padded with 8 threads, about 80x**. Every increment forces the cache line to move between cores. Latency vs batch: **~2.3 µs per book one at a time (p50) vs ~350 ns per book in a 12-thread batch**. Batching wins throughput, but each book in a batch waits for the whole batch, which is useless when you must react to *this* message.
+</details>
+
+---
+
+## After the labs
 
 From here you write the code. The learning path has step-by-step milestones for each project:
 
@@ -302,8 +338,9 @@ From here you write the code. The learning path has step-by-step milestones for 
 | 6 | L3 order book, then a fast version, then matching | [Stage 6](../LEARNING_PATH.md#stage-6-the-order-book-engine) |
 | 7 | Nasdaq ITCH parser feeding your book | [Stage 7](../LEARNING_PATH.md#stage-7-market-data-binary-feeds) |
 | 8 | SPSC queue, thread round-trip benchmark | [Stage 8](../LEARNING_PATH.md#stage-8-concurrency-without-locks) |
-| 9 | Multicast replay, io_uring and AF_XDP receivers | [Stage 9](../LEARNING_PATH.md#stage-9-networking-and-kernel-bypass) |
-| 10 | Isolated-core jitter measurements | [Stage 10](../LEARNING_PATH.md#stage-10-tuning-the-operating-system) |
-| 11 | The full tick-to-trade pipeline | [Stage 11](../LEARNING_PATH.md#stage-11-capstone-tick-to-trade) |
+| 9 | Thread pool, TBB and parallel STL versions, CUDA kernel and TensorRT on Colab | [Stage 9](../LEARNING_PATH.md#stage-9-parallelism-and-throughput) (start with lab 08) |
+| 10 | Multicast replay, io_uring and AF_XDP receivers | [Stage 10](../LEARNING_PATH.md#stage-10-networking-and-kernel-bypass) |
+| 11 | Isolated-core jitter measurements | [Stage 11](../LEARNING_PATH.md#stage-11-tuning-the-operating-system) |
+| 12 | The full tick-to-trade pipeline | [Stage 12](../LEARNING_PATH.md#stage-12-capstone-tick-to-trade) |
 
 Put each project in its own folder under `cpp/` (for example `cpp/orderbook/`), with its own tests and a benchmark, and keep using the five-step method: predict, run, observe, break, explain.

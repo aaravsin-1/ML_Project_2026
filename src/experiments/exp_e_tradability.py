@@ -64,9 +64,10 @@ def round_trips(lob: np.ndarray, ts: np.ndarray, rows: np.ndarray, sides: np.nda
             "gross_bps": side * (exit_.fill_price - entry.fill_price) / entry.fill_price * 1e4,
             "mid_move_bps": side * (mid_out - mid_in) / mid_in * 1e4,
             "notional": entry.fill_price * lot,
+            "row": int(t),
         })
         busy_until = exit_.timestamp_idx
-    return pd.DataFrame(out, columns=["gross_bps", "mid_move_bps", "notional"])
+    return pd.DataFrame(out, columns=["gross_bps", "mid_move_bps", "notional", "row"])
 
 
 def evaluate_signal(data: PreparedData, X: np.ndarray, y: np.ndarray, k: int, label_type: str,

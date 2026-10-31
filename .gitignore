@@ -36,3 +36,9 @@ weights/*.pth
 
 # Lab binaries
 /cpp/labs/build/
+
+# Local Python environment
+/.venv/
+
+# Raw LOBSTER sample archives
+/lobster/

@@ -54,7 +54,7 @@ def test_round_trips_do_not_overlap():
 def test_cpp_codegen_matches_lightgbm():
     import lightgbm as lgb
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-    from benchmark_trained_model import tree_to_cpp
+    from lgbm_to_cpp import tree_to_cpp
 
     rng = np.random.default_rng(0)
     X = rng.normal(size=(600, 4)).astype(np.float32)

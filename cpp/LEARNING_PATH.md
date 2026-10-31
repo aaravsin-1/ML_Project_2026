@@ -27,9 +27,10 @@ Time estimates assume part-time study (around 8–10 hours a week). They are rou
 6. [The order book engine](#stage-6-the-order-book-engine)
 7. [Market data: binary feeds](#stage-7-market-data-binary-feeds)
 8. [Concurrency without locks](#stage-8-concurrency-without-locks)
-9. [Networking and kernel bypass](#stage-9-networking-and-kernel-bypass)
-10. [Tuning the operating system](#stage-10-tuning-the-operating-system)
-11. [Capstone: tick-to-trade](#stage-11-capstone-tick-to-trade)
+9. [Parallelism and throughput](#stage-9-parallelism-and-throughput)
+10. [Networking and kernel bypass](#stage-10-networking-and-kernel-bypass)
+11. [Tuning the operating system](#stage-11-tuning-the-operating-system)
+12. [Capstone: tick-to-trade](#stage-12-capstone-tick-to-trade)
 - [Audit: what is wrong with the existing C++](#audit-what-is-wrong-with-the-existing-c)
 - [Resources](#resources)
 
@@ -80,7 +81,7 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 - Cache lines (64 bytes), spatial and temporal locality, hardware prefetching.
 - Pipelines and out-of-order execution: why a modern core can retire several instructions per cycle, and what stops it (dependency chains).
 - Branch prediction: what a misprediction costs (around 15–20 cycles on Zen 3), and why random data is the worst case.
-- The TLB and why huge pages exist (used again in stages 9–10).
+- The TLB and why huge pages exist (used again in stages 10–11).
 
 **In this repo**
 1. [lob.hpp](include/lob.hpp): the order book as an *array of structs* (each level is a `{price, quantity}` pair).
@@ -302,7 +303,44 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 
 ---
 
-## Stage 9: Networking and kernel bypass
+## Stage 9: Parallelism and throughput
+
+*About 2 weeks.*
+
+**Why it matters.** Stages 1–8 make one message fast on one core: that is *latency*. Research and backtesting have the opposite problem: process a whole day (or a year) of data as fast as possible on every core you have, which is *throughput*. The same feature code is written differently for the two, and knowing which one you are optimizing is half the skill. The research spec also proposes GPUs (TensorRT) for DeepLOB inference, which is parallelism on a different kind of hardware.
+
+**Concepts**
+- **OpenMP:** `#pragma omp parallel for`, `schedule(static)` vs `schedule(dynamic, chunk)`, `reduction(+:x)`, `#pragma omp simd`, `num_threads`, `OMP_PROC_BIND` / `OMP_PLACES` for pinning.
+- **Standard C++ parallelism:** `std::thread` and `std::jthread`, writing a thread pool with a work queue, `std::execution::par` / `par_unseq` algorithms. On GCC these need Intel TBB as the backend; without it they quietly run on one thread.
+- **Intel TBB (oneTBB):** `parallel_for`, `parallel_reduce`, task-based work stealing.
+- **Measuring scaling:** speedup, parallel efficiency, **Amdahl's law** (the serial part caps the speedup), and why compute-bound work scales while **memory-bandwidth-bound** work stops at a few cores.
+- **SMT (hyper-threading):** your 6 cores show up as 12 threads; why the 12th thread can make things slower.
+- **False sharing in parallel loops:** per-thread counters or results that share a cache line (stage 8 again, now at full scale).
+- **Latency vs throughput:** per-message processing on one pinned core versus batched processing across all cores, and why a trading system usually wants the first while its research pipeline wants the second.
+- **GPUs:** the CUDA model (kernels, threads, blocks, warps, memory transfers), why GPUs win on big batches and lose on single small requests, and inference engines (TensorRT) that compile a trained network for low-latency GPU inference. **Your laptop has no NVIDIA GPU**, so CUDA work happens on Colab.
+
+**In this repo**
+- [labs/lab08_parallel_scaling.cpp](labs/lab08_parallel_scaling.cpp): OpenMP scaling sweep, false sharing and latency-vs-batch, ready to run.
+- The Python side does this already: LightGBM's `n_jobs=-1` and PyTorch's batched GPU training. Experiment H's run took 76 s of wall time but 5 m 45 s of CPU time, a speedup of about 4.5x across 12 threads.
+
+**Lab:** [08 parallel scaling](labs/README.md#lab-08-parallel-scaling).
+
+**Do**
+- **9.1** Do lab 08. Fit Amdahl's law to your compute-bound curve: what serial fraction explains it?
+- **9.2** Install TBB (`sudo dnf install tbb-devel`), rewrite lab 08's loop with `std::for_each(std::execution::par, ...)` linked with `-ltbb`, then with `tbb::parallel_for`. Compare all three with OpenMP. Then build the `std::execution::par` version *without* `-ltbb` and confirm it runs on one thread.
+- **9.3** Write your own thread pool (a fixed set of `std::jthread` workers taking tasks from a mutex-protected queue). Use it to compute features for the five LOBSTER stocks in parallel, one stock per task. Where does it stop scaling, and why?
+- **9.4** Port the AVX2 OFI from stage 3 to process a whole day of books with OpenMP *and* SIMD (`#pragma omp parallel for simd`, or your intrinsics inside an OpenMP loop). How close do you get to the machine's memory bandwidth (measure it with lab 08's light mode)?
+- **9.5** On Colab: write a CUDA kernel (`%%writefile kernel.cu`, then `nvcc`) that computes level-1 imbalance for millions of books. Time it including the host-to-device copy, then excluding it. At what batch size does the GPU beat your 12-thread CPU version?
+- **9.6** On Colab: export the trained DeepLOB to ONNX, build a TensorRT engine, and measure single-sample and batch-of-1024 latency against plain PyTorch. Compare with the project's measured 5.7 ms PyTorch DeepLOB latency and the ~10 µs C++ LightGBM.
+
+**Checkpoint**
+- Why did the light (memory-bound) loop stop scaling at about 1.4x while the heavy one reached about 6.7x?
+- 95% of a program parallelizes perfectly. What is the best possible speedup on 12 threads, and on infinitely many?
+- A model takes 2 µs per message on one core. Would a GPU make a live trading system faster? Would it make a backtest faster? Why the difference?
+
+---
+
+## Stage 10: Networking and kernel bypass
 
 *About 3 weeks.*
 
@@ -322,11 +360,11 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 **What your laptop can and cannot do.** You can learn sockets, multicast, `epoll`, `io_uring` and AF_XDP (on the loopback or a virtual interface, or your Wi-Fi card in generic mode). DPDK runs with its AF_XDP or virtual devices for learning. Real microsecond-level numbers need a server with a supported NIC (cloud instances with ENA or Mellanox cards, or a used Solarflare card in a desktop), so treat timings on the laptop as relative.
 
 **Do**
-- **9.1** Write a UDP multicast sender that replays your ITCH messages and a receiver that feeds them into the stage-7 handler. Measure one-way latency on the same machine (send timestamp in the packet).
-- **9.2** Rewrite the receiver with `io_uring`, then with busy-polling. Compare latency distributions.
-- **9.3** Write an AF_XDP receiver (start from the `xdp-tutorial` repo in [resources](#resources)). Compare with 9.1.
-- **9.4** Optional: set up DPDK with the `net_af_xdp` or `net_tap` driver and receive the same packets.
-- **9.5** Write a one-page summary of how ef_vi or OpenOnload differs from AF_XDP and DPDK, from their documentation.
+- **10.1** Write a UDP multicast sender that replays your ITCH messages and a receiver that feeds them into the stage-7 handler. Measure one-way latency on the same machine (send timestamp in the packet).
+- **10.2** Rewrite the receiver with `io_uring`, then with busy-polling. Compare latency distributions.
+- **10.3** Write an AF_XDP receiver (start from the `xdp-tutorial` repo in [resources](#resources)). Compare with 9.1.
+- **10.4** Optional: set up DPDK with the `net_af_xdp` or `net_tap` driver and receive the same packets.
+- **10.5** Write a one-page summary of how ef_vi or OpenOnload differs from AF_XDP and DPDK, from their documentation.
 
 **Checkpoint**
 - Walk through every copy and context switch between a packet hitting the NIC and your `recv()` returning. Which ones does each bypass technique remove?
@@ -334,7 +372,7 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 
 ---
 
-## Stage 10: Tuning the operating system
+## Stage 11: Tuning the operating system
 
 *About 1 week.*
 
@@ -348,16 +386,16 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 - SMT (hyper-threading): why HFT systems often disable it.
 
 **Do**
-- **10.1** Measure the jitter of an empty busy loop (record the largest gaps between consecutive `rdtsc` reads) on a normal core. Then boot with `isolcpus=3 nohz_full=3` (Fedora: `grubby --update-kernel=ALL --args=...`, revert afterwards) and measure on core 3. Compare the gap histograms.
-- **10.2** Rerun the 2.3 benchmark on the isolated core with the performance governor. How much did p99.9 improve?
-- **10.3** Read Erik Rigtorp's low-latency tuning guide (see [resources](#resources)) and list which items apply to a laptop and which need a server.
+- **11.1** Measure the jitter of an empty busy loop (record the largest gaps between consecutive `rdtsc` reads) on a normal core. Then boot with `isolcpus=3 nohz_full=3` (Fedora: `grubby --update-kernel=ALL --args=...`, revert afterwards) and measure on core 3. Compare the gap histograms.
+- **11.2** Rerun the 2.3 benchmark on the isolated core with the performance governor. How much did p99.9 improve?
+- **11.3** Read Erik Rigtorp's low-latency tuning guide (see [resources](#resources)) and list which items apply to a laptop and which need a server.
 
 **Checkpoint**
 - What does `nohz_full` remove, and why does it only help a core running a single thread?
 
 ---
 
-## Stage 11: Capstone: tick-to-trade
+## Stage 12: Capstone: tick-to-trade
 
 *About 4 weeks.*
 
@@ -365,7 +403,7 @@ Put the pieces together into one system and measure it end to end, from a packet
 
 ```
 UDP multicast replay ─▶ feed handler ─▶ L3 order book ─▶ features ─▶ model ─▶ risk checks ─▶ order out
-   (stage 9)             (stage 7)       (stage 6)        (stage 3)  (stage 4)  (new)        (UDP/TCP)
+   (stage 10)            (stage 7)       (stage 6)        (stage 3)  (stage 4)  (new)        (UDP/TCP)
 ```
 
 - Each stage on its own pinned core, connected by your SPSC queues (stage 8).
@@ -432,7 +470,13 @@ The C++ in this repo is a starting point, not production code, and some of it ov
 - Nasdaq TotalView-ITCH 5.0 specification (PDF, on nasdaqtrader.com).
 - Sample ITCH files: [emi.nasdaq.com/ITCH](https://emi.nasdaq.com/ITCH/). Real full-day feeds, several GB each.
 
-**Networking and kernel bypass (stages 9–10)**
+**Parallelism and GPUs (stage 9)**
+- Ruud van der Pas, Eric Stotzer and Christian Terboven, *Using OpenMP: The Next Step* (MIT Press, 2017).
+- Michael Voss, Rafael Asenjo and James Reinders, *Pro TBB: C++ Parallel Programming with Threading Building Blocks* (Apress, 2019, free to download).
+- Wen-mei Hwu, David Kirk and Izzat El Hajj, *Programming Massively Parallel Processors* (4th ed., 2022). The standard CUDA textbook.
+- NVIDIA's CUDA C++ Programming Guide and TensorRT documentation (docs.nvidia.com).
+
+**Networking and kernel bypass (stages 10–11)**
 - Jens Axboe, "Efficient IO with io_uring" (kernel.dk), and the *Lord of the io_uring* guide.
 - [xdp-project/xdp-tutorial](https://github.com/xdp-project/xdp-tutorial): hands-on AF_XDP and XDP lessons.
 - [DPDK documentation](https://doc.dpdk.org), starting with the getting-started guide and the sample applications.
