@@ -1,7 +1,7 @@
 # High-Frequency Limit Order Book Alpha & Microstructure Execution Engine
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/aaravsin-1/ML_Project_2026/blob/master/notebooks/colab_run_all.ipynb)
-[![Tests](https://img.shields.io/badge/pytest-34%20tests-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/pytest-39%20tests-brightgreen.svg)](tests/)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](setup.py)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%20CUDA-orange.svg)](src/models/)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20%20SIMD-darkblue.svg)](cpp/)
@@ -19,6 +19,7 @@ Results come in two parts:
 - **Large-tick stocks are more predictable, and the signal peaks at 1–5 seconds.** On LOBSTER data (100 ms clock), learned models beat naive momentum on INTC and MSFT from 500 ms to 10 s (INTC at 5 s: macro-F1 0.457 vs 0.344), but mostly do not on the small-tick AMZN and GOOG. At 100 ms the mid price of a large-tick stock almost never moves, so there is nothing to predict.
 - **Simple models match deep learning only at short horizons.** On FI-2010 (3 seeds), logistic regression with lagged price history beats our DeepLOB at k = 10 (86.1% vs 83.1 ± 0.3% accuracy) and k = 20 (78.3% vs 74.1 ± 0.5%). DeepLOB wins clearly at k = 50 and k = 100.
 - **Leakage inflates published results, and we measured by how much.** On Optiver Realized Volatility, the 1st-place nearest-neighbour features keep only about **59%** of their gain once neighbours are restricted to the past.
+- **The micro-price is a great predictor where the tick is large, not a better target.** On INTC and MSFT the mid closes the gap to the micro-price within about 10 s, and that one-parameter rule matches LightGBM from 5 s on. As a training target it is worse than the mid in 21 of 37 cases and never better.
 - **Ethereum's order book helps predict Bitcoin a little** (+0.016 macro-F1 at 10 s, all 4 segments). LightGBM's edge over the baselines is statistically significant (block bootstrap), but over Random Forest it is tiny (+0.004).
 
 On synthetic data (5 seeds), LightGBM is also the strongest model (macro-F1 0.584 ± 0.012). There the latency study shows that its edge over DeepLOB comes from better signals, not faster inference.
@@ -33,7 +34,7 @@ How the original research plan ([project_research.md](project_research.md)) maps
 |:---|:---|:---|:---|
 | 1 | Large-tick vs small-tick predictability | [LOBSTER](#lobster-nasdaq-event-data-large--vs-small-tick-stocks-experiment-i), [BTC market making](#btc-market-making-with-an-adverse-selection-model-experiment-h) | Done |
 | 2 | FI-2010, LOBSTER, crypto data; leak-free normalization | All real-data sections; train-only fitting | Done |
-| 3 | OFI, multi-level OFI + PCA, VPIN, micro-price, event trajectory | Feature pipeline; order-flow features in Experiments H and I | Done. Micro-price divergence as a separate *target* not tested |
+| 3 | OFI, multi-level OFI + PCA, VPIN, micro-price, event trajectory | Feature pipeline; order-flow features in Experiments H and I; [micro-price as a target](#micro-price-as-a-target-experiment-k) (Experiment K) | Done. The micro-price gap is a strong predictor on large-tick stocks but a worse training target than the mid |
 | 4.1 / 5.2 | Horizons from 100 ms to 30 s and the decay curve | Synthetic B, BTC B (10–100 s), LOBSTER (100 ms–30 s) | Done |
 | 4.2 | Model ladder, tiers 0–5 | Synthetic and BTC Experiment A; FI-2010; LOBSTER (tabular models) | Done |
 | 5.1 | Beat the baselines, significantly; confusion matrices | BTC A, [Experiment J](#btc-attribution-and-significance-experiment-j) | Done for tabular models; DeepLOB comparison pending a Colab run |
@@ -457,6 +458,38 @@ LightGBM is significantly better than all three, but its edge over Random Forest
 - SHAP gives the recent history of level-1 signals much more weight than gain importance did (35% vs 25%), which fits the ablation (lags were the biggest single addition). The book-shape features still lead, led by `slope_ask` (12.3%) and `slope_bid` (11.8%).
 - **Confusion matrices** ([csv](artifacts/btc/attribution/confusion_matrices.csv)): FLAT is the hardest class for every model. LightGBM recalls 40% of FLAT, 50% of UP and 52% of DOWN rows; naive momentum 39%, 44% and 42%. Errors are spread fairly evenly across the other two classes, so no model is simply calling one direction.
 
+### Micro-price as a target (Experiment K)
+
+Spec section 3.3 calls the gap between the mid price and the micro-price "an additional, highly effective target variable". The micro-price here is the imbalance-weighted mid, so the gap is micro − mid = I × spread / 2, with I the level-1 queue imbalance. Experiment K asks three questions on BTC (4 segments) and LOBSTER (5 stocks), from 500 ms to 50 s ahead ([summary](artifacts/microprice/microprice_summary.csv), [betas](artifacts/microprice/microprice_beta_summary.csv)):
+
+**1. Does the mid price move toward the micro-price?** β is the slope of the future mid change on today's gap, fitted on training rows: β = 1 means the gap has fully closed.
+
+| Horizon | Large-tick β (INTC, MSFT) | Small-tick β (AAPL, AMZN, GOOG) | BTC β |
+|:---:|:---:|:---:|:---:|
+| 500 ms | 0.12 | 0.01 | — |
+| 1 s | 0.22 | 0.02 | — |
+| 5 s | 0.68 | 0.03 | — |
+| 10 s | 0.93 | 0.03 | 0.38 |
+| 30 s | 1.32 | 0.00 | — |
+| 50 s | — | — | 0.69 |
+
+On large-tick stocks the gap closes fully within about 10 s, and by 30 s the mid moves *further* than the gap (β > 1), a sign that the simple weighted mid understates where the price is going. Stoikov's full micro-price corrects for this. On small-tick stocks the gap barely closes. On BTC it closes partly, but at 0.06 bp it is tiny next to 2–6 bp moves.
+
+**2–3. Is the micro-price a better target?** Information coefficient (IC, correlation of the forecast with the realized future *mid* change) on the test period:
+
+| | Large-tick 5 s | Large-tick 10 s | Small-tick 1 s | BTC 10 s |
+|:---|:---:|:---:|:---:|:---:|
+| Micro-price rule (β × gap, one parameter) | **0.290** | **0.278** | 0.062 | 0.024 |
+| Momentum (past k-step return) | 0.037 | 0.012 | 0.042 | 0.074 |
+| LightGBM trained on future mid change | 0.209 | 0.170 | **0.155** | **0.263** |
+| LightGBM trained on future micro-price change | 0.080 | 0.009 | −0.007 | 0.260 |
+| Control (LightGBM on shuffled targets) | −0.003 | 0.005 | −0.003 | 0.002 |
+
+- **As a predictor, the gap is excellent where the tick is large.** On INTC and MSFT the one-parameter rule matches or beats LightGBM with about 40 features from 5 s on, and gets the direction of the mid's next move right 64–82% of the time (82% at 500 ms, falling to 64% at 30 s). LightGBM falls behind it at longer horizons, possibly because the morning training session differs from the last-hour test period.
+- **As a training target, it is worse than the mid itself.** Trained on future micro-price changes and judged on future mid changes, LightGBM was never significantly better than the model trained on the mid directly: significantly worse in 21 of 37 cases (all large-tick cases, 11 of 15 small-tick cases; block-bootstrap 95% CIs) and indistinguishable on BTC, where the micro-price and the mid are almost the same.
+- **Easier to predict is not the same as useful.** On small-tick stocks, up to 10 s ahead, the micro-price's own future change is much more predictable than the mid's (R² 0.06–0.08 vs 0.00–0.02), because it moves with queue sizes that revert. That predictability does not carry over to the price.
+- **The control behaves.** LightGBM trained on shuffled targets (training and validation, 3 shuffles) scores IC −0.0005 averaged over all 37 cases. `python scripts/check_microprice_results.py` runs this and 18 other automatic checks on the results.
+
 ### FI-2010 Setup 2
 
 The models train on days 1–7 and are tested on days 8–10. Accuracy (%), mean ± std over 3 training seeds:
@@ -569,6 +602,7 @@ ML_Project_2026/
 │   │   ├── exp_h_market_making.py          # BTC: market making with an adverse-selection model
 │   │   ├── exp_i_lobster.py                # LOBSTER: decay curve, tick regimes, market making
 │   │   ├── exp_j_attribution.py            # BTC: TreeSHAP, significance tests, DeepLOB attribution
+│   │   ├── exp_k_microprice.py             # Micro-price gap as predictor and as target (BTC, LOBSTER)
 │   │   ├── fi2010_benchmark.py             # FI-2010 Setup 2 vs published DeepLOB
 │   │   ├── optiver_rvp.py                  # Optiver Realized Volatility (forward CV, NN features)
 │   │   └── optiver_close.py                # Optiver Trading at the Close (date split, retraining)
@@ -630,6 +664,7 @@ python -m src.experiments.exp_f_cross_asset
 python -m src.experiments.exp_g_regimes              # CPU, ~10 min
 python -m src.experiments.exp_h_market_making        # CPU, ~2 min
 python -m src.experiments.exp_j_attribution          # CPU part; add --deeplob on a GPU first
+python -m src.experiments.exp_k_microprice           # CPU, ~1 h; then: python scripts/check_microprice_results.py
 python -m src.experiments.exp_i_lobster              # needs LOBSTER files in data/raw/lobster/
 python -m src.experiments.fi2010_benchmark
 python -m src.experiments.optiver_close
@@ -651,7 +686,7 @@ g++ -std=c++20 -O3 -march=native -ffast-math -I cpp/include cpp/src/main_benchma
 python -m pytest tests -v
 ```
 
-34 tests cover:
+39 tests cover:
 - feature formulas (OFI, micro-price, VPIN, BiN);
 - the pipeline fitting only on training rows, real VPIN, and the integer tick spread;
 - the purge gap;
@@ -663,7 +698,8 @@ python -m pytest tests -v
 - time-bar Sharpe;
 - purged CV and the permutation check;
 - real-data plumbing without downloads: train-only label thresholds, Coinbase format conversion, causality of the Optiver Close features, and past-only neighbors and forward folds for Optiver RVP;
-- the follow-up experiments: causal FI-2010 history features, cost-aware labels and round trips, and the C++ code generator.
+- the follow-up experiments: causal FI-2010 history features, cost-aware labels and round trips, and the C++ code generator;
+- the micro-price experiment: the micro-price formula, forward returns without wrap-around, β and R² against known answers, the bootstrap CI, and an end-to-end run where a planted signal must be found and the shuffled control must not find it.
 
 The model, feature and extension tests need PyTorch. The simulator and validation tests need only numpy and pandas.
 
