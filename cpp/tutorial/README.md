@@ -14,7 +14,7 @@ g++ -std=c++20 -O3 -march=native cpp/tutorial/learn_simd.cpp -o build/learn_simd
 ./build/learn_simd
 ```
 
-This tutorial is part of [LEARNING_PATH.md](../LEARNING_PATH.md) (stage 3). The matching hands-on experiment is [lab 06](../labs/README.md#lab-06-simd-on-a-real-feature).
+This tutorial is part of [LEARNING_PATH.md](../LEARNING_PATH.md) (stage 3). The matching hands-on experiment is [lab 06](../labs/docs/06_simd_ofi.md).
 
 ---
 

@@ -2,7 +2,7 @@
 
 A self-study route through the systems side of this project, from the C++ already in [cpp/](.) to the parts a real trading system has that this repo does not have yet (order book engines, market-data feeds, lock-free queues, kernel bypass).
 
-**Two documents work together.** This file is the map: what to learn, in what order, and why. The hands-on part is [labs/](labs/README.md): runnable experiments you predict, run, break and explain, each tied to a stage below. Start there as soon as you finish setup.
+**Two documents work together.** This file is the map: what to learn, in what order, and why. The hands-on part is [labs/](labs/README.md): runnable experiments you predict, run, break and explain, each tied to a stage below, with a [tools guide](labs/docs/tools.md), [troubleshooting](labs/docs/troubleshooting.md) and a [glossary](labs/docs/glossary.md). Start there as soon as you finish setup.
 
 Each stage builds on the previous one and has the same five parts:
 
@@ -89,7 +89,7 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 3. [tree_engine.hpp](include/tree_engine.hpp): a normal decision tree. Each node decides left or right with an `if`, then jumps to a child somewhere else in memory ("pointer chasing").
 4. [tree_engine_branchless.hpp](include/tree_engine_branchless.hpp): an *oblivious* tree, where every node at the same depth tests the same feature, so the leaf index can be computed with bit operations and no jumps.
 
-**Labs:** [01 memory hierarchy](labs/README.md#lab-01-the-memory-hierarchy), [02 data layout](labs/README.md#lab-02-data-layout-array-of-structs-vs-struct-of-arrays), [03 branch prediction](labs/README.md#lab-03-branch-prediction). Do these first; the exercises below go further.
+**Labs:** [01 memory hierarchy](labs/docs/01_memory_hierarchy.md), [02 data layout](labs/docs/02_data_layout.md), [03 branch prediction](labs/docs/03_branch_prediction.md). Do these first; the exercises below go further.
 
 **Do**
 - **1.1** Draw the memory layout of `LimitOrderBook` and `LimitOrderBookSoA` byte by byte: offsets, padding, and which cache line each field lands in. Check your drawing with `static_assert(offsetof(...) == ...)` and `sizeof`.
@@ -123,12 +123,12 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 2. [trained_model_benchmark.cpp](src/trained_model_benchmark.cpp): times the *trained* LightGBM model compiled to C++, checks it matches LightGBM exactly, and reports percentiles plus a batch number that amortizes the clock cost.
 3. [optimization_comparison.cpp](src/optimization_comparison.cpp): the "baseline vs hand-optimized" comparison behind the claimed 2.41x speedup.
 
-**Labs:** [04 timers and dead-code elimination](labs/README.md#lab-04-timers-and-the-disappearing-benchmark), [05 noise and jitter](labs/README.md#lab-05-noise-and-jitter), [07 the trained model](labs/README.md#lab-07-the-trained-model-in-c).
+**Labs:** [04 timers and dead-code elimination](labs/docs/04_timers_and_dce.md), [05 noise and jitter](labs/docs/05_noise_and_jitter.md), [07 the trained model](labs/docs/07_trained_model.md).
 
 **Do**
 - **2.1** Measure the cost of reading the clock: time an empty region 10 million times with `steady_clock` and with `__rdtsc()`. Compare with the "feature extraction" numbers `main_benchmark` reports. What can you conclude about those numbers?
 - **2.2** Learn [Google Benchmark](https://github.com/google/benchmark) (`sudo dnf install google-benchmark-devel`). Rewrite the stage-1 experiments with it.
-- **2.3** **Rerun the trained-model benchmark properly** ([lab 07](labs/README.md#lab-07-the-trained-model-in-c)). [gen_trained_model.py](labs/gen_trained_model.py) rebuilds the C++ model from the saved model file (no BTC data needed). Run it idle, pinned and plugged in, 10 times, report the spread, and update the README table. This closes an open item in the project.
+- **2.3** **Rerun the trained-model benchmark properly** ([lab 07](labs/docs/07_trained_model.md)). [gen_trained_model.py](labs/gen_trained_model.py) rebuilds the C++ model from the saved model file (no BTC data needed). Run it idle, pinned and plugged in, 10 times, report the spread, and update the README table. This closes an open item in the project.
 - **2.4** Port `optimization_comparison.cpp` to Linux: replace `SetThreadPriority` with `sched_setaffinity` (pinning) and optionally `SCHED_FIFO`. Then read the [audit](#audit-what-is-wrong-with-the-existing-c) questions about it before trusting its output.
 
 **Checkpoint**
@@ -157,7 +157,7 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 2. [features_avx2.hpp](include/features_avx2.hpp): multi-level order flow imbalance for 12 levels in 3 blocks of 4, with `_mm256_cmp_pd` and `_mm256_blendv_pd` replacing the three-way `if`.
 3. [features.hpp](include/features.hpp): the scalar version, to compare against.
 
-**Lab:** [06 SIMD on a real feature](labs/README.md#lab-06-simd-on-a-real-feature).
+**Lab:** [06 SIMD on a real feature](labs/docs/06_simd_ofi.md).
 
 **Do**
 - **3.1** Work through the tutorial, then do its suggested exercise (weighted mid-price with intrinsics).
@@ -323,7 +323,7 @@ All of these were checked on your laptop. `cpp/src/optimization_comparison.cpp` 
 - [labs/lab08_parallel_scaling.cpp](labs/lab08_parallel_scaling.cpp): OpenMP scaling sweep, false sharing and latency-vs-batch, ready to run.
 - The Python side does this already: LightGBM's `n_jobs=-1` and PyTorch's batched GPU training. Experiment H's run took 76 s of wall time but 5 m 45 s of CPU time, a speedup of about 4.5x across 12 threads.
 
-**Lab:** [08 parallel scaling](labs/README.md#lab-08-parallel-scaling).
+**Lab:** [08 parallel scaling](labs/docs/08_parallel_scaling.md).
 
 **Do**
 - **9.1** Do lab 08. Fit Amdahl's law to your compute-bound curve: what serial fraction explains it?
