@@ -153,9 +153,9 @@ Random guessing scores 0.333.
 | Naive momentum | +0.059 | 0.050 to 0.068 | < 0.0001 |
 | Logistic regression | +0.019 | 0.015 to 0.024 | < 0.0001 |
 | Random Forest | +0.004 | 0.001 to 0.007 | 0.015 |
-| DeepLOB | +0.067 on average; better on 4/4 segments | *pending: significance test running on Colab* | — |
+| DeepLOB | +0.058 | 0.049 to 0.068 | < 0.0001 |
 
-The signal is real but small: about +0.05 macro-F1 over momentum. LightGBM is significantly better than all the tabular baselines, but only barely better than Random Forest. The deep sequence models do worse than trees on hand-crafted features here. On the synthetic data the ranking is the same (LightGBM 0.584 ± 0.012, DeepLOB 0.559 ± 0.010).
+The signal is real but small: about +0.05 macro-F1 over momentum. LightGBM is significantly better than every other model, on all 4 segments for DeepLOB, but only barely better than Random Forest. The deep sequence models do worse than trees on hand-crafted features here. DeepLOB also leans toward one direction: it calls 41% of FLAT rows DOWN, while the tree models spread their errors evenly. On the synthetic data the ranking is the same (LightGBM 0.584 ± 0.012, DeepLOB 0.559 ± 0.010).
 
 ### 4.2 Do deep models ever win? (FI-2010, accuracy %, 3 seeds)
 
@@ -190,6 +190,7 @@ LOBSTER's 100 ms clock shows the full curve. On the large-tick stocks the best l
 
 - **Ablation** (BTC, LightGBM): the level-1 snapshot alone reaches 0.436 macro-F1. Lags add +0.024, and everything deeper in the book adds less than +0.01.
 - **TreeSHAP** shares: deeper-book shape 39%, level-1 lags 35%, level-1 snapshot 14%, VPIN 7%, levels 2–3 5%. Gain importance under-weights the lags (25%).
+- **DeepLOB** (gradient × input attribution): level 1 counts twice as much as any deeper level, and 57% of the weight falls on the most recent 10 of its 100 snapshots. So the deep network, without hand-made features, ends up relying on the same things as LightGBM: the top of the book and very recent history. It also puts 84% of the weight on order sizes rather than prices, but that is partly a scaling effect: gradient × input grows with input size, and the normalized sizes are much larger numbers than the normalized prices.
 - **Cross-asset:** Ethereum's book adds +0.016 macro-F1 at 10 s, improving all 4 segments. The gain fades with horizon, which fits ETH leading BTC by a few seconds.
 
 ### 4.5 The micro-price: a cheap, fast predictor (Experiment K)

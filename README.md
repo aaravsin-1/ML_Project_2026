@@ -13,7 +13,7 @@ Results come in two parts:
 - **Real data** tests whether any of it holds up. It covers Coinbase BTC-USD, FI-2010, two Optiver Kaggle competitions, and one day of event-level Nasdaq data for five stocks (LOBSTER).
 
 **Headline findings on real data:**
-- **Direction is predictable, but only slightly.** On Coinbase BTC-USD (1 s snapshots, 20 s horizon), LightGBM reaches macro-F1 **0.467 ± 0.021**. Random guessing gets 0.333 and naive momentum 0.413. LightGBM beats DeepLOB (0.401) on all 4 segments.
+- **Direction is predictable, but only slightly.** On Coinbase BTC-USD (1 s snapshots, 20 s horizon), LightGBM reaches macro-F1 **0.467 ± 0.021**. Random guessing gets 0.333 and naive momentum 0.413. LightGBM beats DeepLOB (0.401) on all 4 segments, and the gap is statistically significant.
 - **Predictable is not profitable, in any regime.** The best filtered signal earns about **0.7 bp** per round trip after crossing the spread, against 8 bp for a round trip at a 4 bp taker fee. Splitting trades by VPIN, spread and volatility does not rescue it: the best regime earns about 1.4 bp before fees, and the edge is most consistent in *calm* markets, not toxic ones.
 - **Market making fails on BTC because its tick is tiny.** The spread is $0.01 on a ~$60,000 coin (0.0017 bp), so a market maker earns nothing for the adverse selection it absorbs. Naive two-sided quoting loses about $10,000 per day; an adverse-selection model cuts that by 86% or more but only breaks even under optimistic fill assumptions. On large-tick Nasdaq stocks, whether a fill makes money depends on queue position.
 - **Large-tick stocks are more predictable, and the signal peaks at 1–5 seconds.** On LOBSTER data (100 ms clock), learned models beat naive momentum on INTC and MSFT from 500 ms to 10 s (INTC at 5 s: macro-F1 0.457 vs 0.344), but mostly do not on the small-tick AMZN and GOOG. At 100 ms the mid price of a large-tick stock almost never moves, so there is nothing to predict.
@@ -37,8 +37,8 @@ How the original research plan ([project_research.md](project_research.md)) maps
 | 3 | OFI, multi-level OFI + PCA, VPIN, micro-price, event trajectory | Feature pipeline; order-flow features in Experiments H and I; [micro-price as a target](#micro-price-as-a-target-experiment-k) (Experiment K) | Done. The micro-price gap is a strong predictor on large-tick stocks but a worse training target than the mid |
 | 4.1 / 5.2 | Horizons from 100 ms to 30 s and the decay curve | Synthetic B, BTC B (10–100 s), LOBSTER (100 ms–30 s) | Done |
 | 4.2 | Model ladder, tiers 0–5 | Synthetic and BTC Experiment A; FI-2010; LOBSTER (tabular models) | Done |
-| 5.1 | Beat the baselines, significantly; confusion matrices | BTC A, [Experiment J](#btc-attribution-and-significance-experiment-j) | Done for tabular models; DeepLOB comparison pending a Colab run |
-| 5.3 | Ablation and SHAP/LIME attribution | Experiment C, Experiment J (TreeSHAP) | Done for LightGBM; DeepLOB attribution pending a Colab run; LIME not used |
+| 5.1 | Beat the baselines, significantly; confusion matrices | BTC A, [Experiment J](#btc-attribution-and-significance-experiment-j) | Done |
+| 5.3 | Ablation and SHAP/LIME attribution | Experiment C, Experiment J (TreeSHAP) | Done: TreeSHAP for LightGBM, gradient × input for DeepLOB; LIME not used |
 | 6.1 | Spread crossing, fees, book walking, latency | Experiments D and E, execution simulator | Done |
 | 6.2 | Passive fills, adverse selection, VPIN-based market making | Experiments H and I | Done |
 | 7 | Low-latency C++ system | [C++ benchmark](#c20-latency-benchmark): compiled trained model, AVX2 features, latency benchmarks. Feed handling, order book engine, kernel bypass: [cpp/LEARNING_PATH.md](cpp/LEARNING_PATH.md) | In progress |
@@ -445,7 +445,7 @@ LOBSTER's free sample files contain every order event for five Nasdaq stocks on 
 
 ### BTC: attribution and significance (Experiment J)
 
-Spec sections 5.1 and 5.3 ask whether improvements over the baselines are statistically significant, and for SHAP-style attribution. Experiment J retrains Experiment A's tabular models on each BTC segment (k = 20 s) with the same settings and keeps their per-row test predictions.
+Spec sections 5.1 and 5.3 ask whether improvements over the baselines are statistically significant, and for SHAP-style attribution. Experiment J retrains Experiment A's tabular models on each BTC segment (k = 20 s) with the same settings and keeps their per-row test predictions. DeepLOB is retrained the same way on a GPU (Colab, `--deeplob`).
 
 **Significance** of LightGBM's macro-F1 advantage, pooled over the 4 segments. The CI is a moving-block bootstrap (5-minute blocks, segments resampled separately); McNemar's test compares which rows each model gets right ([csv](artifacts/btc/attribution/significance_vs_lightgbm.csv)):
 
@@ -454,8 +454,9 @@ Spec sections 5.1 and 5.3 ask whether improvements over the baselines are statis
 | Naive momentum | +0.059 | 0.050 to 0.068 | 4/4 | < 0.0001 |
 | Logistic regression | +0.019 | 0.015 to 0.024 | 4/4 | < 0.0001 |
 | Random Forest | +0.004 | 0.001 to 0.007 | 3/4 | 0.015 |
+| DeepLOB | +0.058 | 0.049 to 0.068 | 4/4 | < 0.0001 |
 
-LightGBM is significantly better than all three, but its edge over Random Forest is tiny. DeepLOB's predictions come from a GPU run; the Colab notebook's `deeplob_attribution` step retrains it, saves its predictions and gradient-based attribution, and adds it to this table.
+LightGBM is significantly better than all four, but its edge over Random Forest is tiny. DeepLOB, trained on the raw book, is about as far behind LightGBM as naive momentum is. (Retrained here, DeepLOB trails by +0.058; Experiment A's run gave +0.067.)
 
 **TreeSHAP** (exact, from LightGBM's `pred_contrib`, on 20,000 test rows per segment), share of mean |SHAP| by feature group, next to Experiment C's gain shares ([groups](artifacts/btc/attribution/shap_lightgbm_groups.csv), [features](artifacts/btc/attribution/shap_lightgbm_features.csv)):
 
@@ -468,7 +469,21 @@ LightGBM is significantly better than all three, but its edge over Random Forest
 | Levels 2–3 | 5.4% | 4.5% |
 
 - SHAP gives the recent history of level-1 signals much more weight than gain importance did (35% vs 25%), which fits the ablation (lags were the biggest single addition). The book-shape features still lead, led by `slope_ask` (12.3%) and `slope_bid` (11.8%).
-- **Confusion matrices** ([csv](artifacts/btc/attribution/confusion_matrices.csv)): FLAT is the hardest class for every model. LightGBM recalls 40% of FLAT, 50% of UP and 52% of DOWN rows; naive momentum 39%, 44% and 42%. Errors are spread fairly evenly across the other two classes, so no model is simply calling one direction.
+- **Confusion matrices** ([csv](artifacts/btc/attribution/confusion_matrices.csv)): FLAT is the hardest class for every model. LightGBM recalls 40% of FLAT, 50% of UP and 52% of DOWN rows; naive momentum 39%, 44% and 42%. The tabular models spread their errors fairly evenly across the other two classes. DeepLOB does not: it recalls only 30% of FLAT rows and calls 41% of them DOWN, and it recalls DOWN (54%) much better than UP (42%), so part of its score comes from leaning toward one direction.
+
+**DeepLOB attribution** (gradient × input for the predicted class, on 2,000 test windows of 100 snapshots per segment; shares of the total, mean over 4 segments; [csv](artifacts/btc/attribution/deeplob_attribution.csv)):
+
+| What the network looks at | Share |
+|:---|:---:|
+| Order sizes (vs prices; partly a scaling effect, see below) | 84% (69–93% by segment) |
+| Level 1 | 18% |
+| Each of levels 2–10 | about 9% |
+| The most recent 10 of the 100 snapshots | 57% (40–79%) |
+| Ask side (vs bid) | 52% |
+
+- **Like LightGBM, DeepLOB relies on queue sizes and on recent history.** Level 1 counts twice as much as any other level, and more than half the weight falls on the last 10 seconds of a 100-second window. That matches the ablation (level-1 signals and their short lags carry most of LightGBM's skill) and the decay curve (skill fades within tens of seconds).
+- **Deeper levels get almost equal weight each**, so the network uses the overall depth profile rather than any particular level. LightGBM gets the same information more compactly from the book-slope and deep-imbalance features (39% of its SHAP).
+- **The sizes-vs-prices split is partly built in.** Gradient × input grows with the size of the input. Prices enter as their relative distance from a fixed reference price (a few percent), while sizes enter log-scaled around 1, so prices are bound to score lower. Compare levels and time steps with each other; don't read the 84% as a causal effect. The level and recency patterns compare like with like, so they are the robust findings.
 
 ### Micro-price as a target (Experiment K)
 
