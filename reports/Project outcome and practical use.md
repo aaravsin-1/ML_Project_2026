@@ -1,6 +1,6 @@
 # LOB project: outcome and practical use
 
-*As of 2026-10-30. FI-2010 numbers are from seed 0 only (the extra-seed runs were stopped).*
+*As of 2026-10-31. FI-2010 numbers are means over 3 training seeds.*
 
 ## Bottom line
 
@@ -14,7 +14,7 @@ The project's main value is a rigorous evaluation of a field full of inflated re
 | --- | --- | --- |
 | 1 | Short-term direction is predictable, but only slightly | Real Coinbase BTC: models beat random guessing (1/3 macro-F1) on every one of the 4 segments |
 | 2 | Predictable is not the same as profitable | Best case after paying the spread: about 0.7 bp per round trip (cost-aware labels, 60 s hold, top 2% of signals). Break-even at 4 bp taker fees is 8 bp. Every setting loses money even at 1 bp fees per side |
-| 3 | Simple models with good features match deep learning at short horizons only | On BTC, LightGBM with OFI, imbalance and micro-price features does as well as or better than DeepLOB, LSTM and TLOB. On FI-2010, logistic regression with price history beats DeepLOB at k=10 (86.1% vs 82.9% ours, 84.5% published) and k=20 (78.3% vs 73.5%), but DeepLOB wins clearly at k=50 (78.2% vs 66.5%) and k=100 (77.1% vs 60.2%). Seed 0 only |
+| 3 | Simple models with good features match deep learning at short horizons only | On BTC, LightGBM with OFI, imbalance and micro-price features does as well as or better than DeepLOB, LSTM and TLOB. On FI-2010, logistic regression with price history beats DeepLOB at k=10 (86.1% vs 83.1 ± 0.3% ours, 84.5% published) and k=20 (78.3% vs 74.1 ± 0.5%), but DeepLOB wins clearly at k=50 (78.2% vs 66.5%) and k=100 (77.5% vs 75.7% for LightGBM with history). 3 seeds; the gaps are several times the seed-to-seed spread |
 | 4 | Many headline results in this field are partly leakage, and we measured how much | Optiver volatility, 4 forward folds: RMSPE 0.235 without neighbour features, 0.223 with past-only neighbours, 0.214 with the leaky 1st-place-style version. About 59% of the gain survives without future data |
 | 5 | Speed is not the bottleneck at this data frequency; fees are | The trained model compiled to C++ predicts in microseconds and matches LightGBM exactly. With 1-second data, a few milliseconds of latency barely matter |
 | 6 | Ethereum's order book gives a small, consistent boost for Bitcoin | Macro-F1 +0.016 at 10 s, +0.012 at 20 s, +0.007 at 50 s; improved on all 4 segments at every horizon. The lead fades within seconds |
@@ -58,6 +58,6 @@ The measure is average cost in bp against the mid price at the start of the wind
 
 - **Small sample:** the BTC data covers a few days on one exchange, split into 4 segments, so error bars are wide.
 - **Coarse data:** 1-second snapshots, not individual order events, and no queue-position model, so passive (maker) fills are approximate.
-- **FI-2010 is one seed:** the history-feature runs for seeds 1 and 2 were stopped. LightGBM with history scored only 56.7% at k=20 against 77.4% at k=10, which looks like a training problem to check.
+- **FI-2010 regime shift:** the test days are calmer than the training days (FLAT is 62% of test labels at k=20 against 49% in training), and the validation days do not reveal it. LightGBM with history features is hit hardest: 56.6% at k=20, with validation accuracy near 88% at every setting. A diagnostic run ruled out early stopping as the cause. Volatility-normalized history features are the natural fix to test.
 - **Simulator depth (fixed):** orders larger than the visible book used to fill the remainder at the last price plus $0.05, which understated cost. The simulator now extends the book past its last level using the visible level spacing and size, or optionally fills partially or rejects the order. It also counts how often an order runs past the visible depth, so the 1-5 BTC execution test can report it. Past 0.1 BTC results would change only if one of those orders ran past the visible book, which is unlikely at that size; the counter will confirm this on the next rerun. One gap remains: our orders do not deplete the book in later snapshots.
 - **Not yet redone:** the C++ speed test was measured while other jobs used the CPU and should be rerun on an idle machine.

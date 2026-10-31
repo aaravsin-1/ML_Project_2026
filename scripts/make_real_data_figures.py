@@ -95,7 +95,7 @@ def fi2010():
     ax.set_xticklabels([f"k = {k}" for k in ks])
     ax.set_ylabel("Weighted F1 (paper's metric)")
     ax.set_ylim(0, 1)
-    ax.set_title("FI-2010 Setup 2: with the same price history, simple models catch up with DeepLOB")
+    ax.set_title("FI-2010 Setup 2: simple models with price history win at short horizons, DeepLOB at long ones")
     ax.legend(fontsize=7, ncol=4, loc="upper center")
     save(fig, "fi2010_comparison.png")
 

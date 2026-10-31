@@ -33,3 +33,6 @@ weights/*.pth
 /data/
 /logs/
 /cpp/generated/
+
+# Lab binaries
+/cpp/labs/build/

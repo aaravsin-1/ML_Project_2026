@@ -6,24 +6,21 @@ Welcome to the interactive SIMD / AVX2 tutorial! This module is designed to teac
 
 ## 1. Quick Start
 
-Compile and run the interactive tutorial with MinGW GCC:
+Compile and run the tutorial from the repo root (Linux; on Windows with MinGW the same `g++` command works):
 
-```powershell
-# Navigate to the repo root
-cd c:\a_Coding\ML_Project_2026
-
-# Compile with AVX2 instruction support enabled
-g++ -O3 -mavx2 -std=c++20 cpp/tutorial/learn_simd.cpp -o cpp/tutorial/learn_simd.exe
-
-# Run the tutorial
-.\cpp\tutorial\learn_simd.exe
+```bash
+mkdir -p build
+g++ -std=c++20 -O3 -march=native cpp/tutorial/learn_simd.cpp -o build/learn_simd
+./build/learn_simd
 ```
+
+This tutorial is part of [LEARNING_PATH.md](../LEARNING_PATH.md) (stage 3). The matching hands-on experiment is [lab 06](../labs/README.md#lab-06-simd-on-a-real-feature).
 
 ---
 
 ## 2. What Is Covered
 
-The tutorial in [`learn_simd.cpp`](file:///c:/a_Coding/ML_Project_2026/cpp/tutorial/learn_simd.cpp) walks through 5 self-contained lessons:
+The tutorial in [`learn_simd.cpp`](learn_simd.cpp) walks through 5 self-contained lessons:
 
 1. **Lesson 1: What is `__m256d` & How to Load Data**
    - Understand 256-bit registers (which hold **4 x 64-bit doubles** simultaneously).
@@ -44,13 +41,13 @@ The tutorial in [`learn_simd.cpp`](file:///c:/a_Coding/ML_Project_2026/cpp/tutor
 
 5. **Lesson 5: Microbenchmark — Branchy Scalar C++ vs Hand-Coded AVX2**
    - Compilers fail to auto-vectorize branching microstructure formulas (such as Cont et al. Order Flow Imbalance).
-   - Empirically see hand-coded AVX2 achieve a **1.53x+ speedup** with 100% bitwise arithmetic equivalence.
+   - Empirically see hand-coded AVX2 achieve a **speedup (about 1.65x on a Ryzen 5 5625U)** with 100% bitwise arithmetic equivalence.
 
 ---
 
 ## 3. How to Learn Hands-On
 
-1. Open [`cpp/tutorial/learn_simd.cpp`](file:///c:/a_Coding/ML_Project_2026/cpp/tutorial/learn_simd.cpp).
+1. Open [`cpp/tutorial/learn_simd.cpp`](learn_simd.cpp).
 2. Modify the values in `lesson1_loading_data()` or `lesson4_real_world_hft_feature()` to experiment with different bid/ask levels.
 3. Try adding a new feature, such as calculating the **weighted mid-price**:
    $$P_{\text{wmid}} = \frac{P_{\text{bid}} \cdot V_{\text{ask}} + P_{\text{ask}} \cdot V_{\text{bid}}}{V_{\text{bid}} + V_{\text{ask}}}$$
@@ -62,7 +59,7 @@ The tutorial in [`learn_simd.cpp`](file:///c:/a_Coding/ML_Project_2026/cpp/tutor
 ## 4. Production Reference in this Repository
 
 Once you're comfortable with the basics:
-- Look at [`cpp/include/lob_soa.hpp`](file:///c:/a_Coding/ML_Project_2026/cpp/include/lob_soa.hpp) to see how order book data is organized in a **Struct-of-Arrays (SoA)** layout for cache efficiency.
-- Look at [`cpp/include/features_avx2.hpp`](file:///c:/a_Coding/ML_Project_2026/cpp/include/features_avx2.hpp) to see production AVX2 computing Multi-Level OFI across all 10 book levels.
-- Look at [`cpp/include/tree_engine_branchless.hpp`](file:///c:/a_Coding/ML_Project_2026/cpp/include/tree_engine_branchless.hpp) to see how decision tree branches are evaluated branchlessly with bitwise operations.
-- Run the full head-to-head engine benchmark: `.\cpp\build\optimization_comparison.exe`.
+- Look at [`cpp/include/lob_soa.hpp`](../include/lob_soa.hpp) to see how order book data is organized in a **Struct-of-Arrays (SoA)** layout for cache efficiency.
+- Look at [`cpp/include/features_avx2.hpp`](../include/features_avx2.hpp) to see production AVX2 computing Multi-Level OFI across all 10 book levels.
+- Look at [`cpp/include/tree_engine_branchless.hpp`](../include/tree_engine_branchless.hpp) to see how decision tree branches are evaluated branchlessly with bitwise operations.
+- The head-to-head engine benchmark, [optimization_comparison.cpp](../src/optimization_comparison.cpp), is still Windows-only. Porting it to Linux is exercise 2.4 in the learning path, and the audit section there asks whether its 2.41x figure is a fair comparison.

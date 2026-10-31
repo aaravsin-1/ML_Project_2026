@@ -15,7 +15,7 @@ Results come in two parts:
 **Headline findings on real data:**
 - **Direction is predictable, but only slightly.** On Coinbase BTC-USD (1 s snapshots, 20 s horizon), LightGBM reaches macro-F1 **0.467 ± 0.021**. Random guessing gets 0.333 and naive momentum 0.413. LightGBM beats DeepLOB (0.401) on all 4 segments.
 - **Predictable is not profitable.** The best filtered signal earns about **0.7 bp** per round trip after crossing the spread. A round trip at a 4 bp taker fee costs 8 bp, so every setting tested loses money after fees, even at 1 bp per side.
-- **Simple models match deep learning only at short horizons.** On FI-2010 (one seed), logistic regression with lagged price history beats our DeepLOB at k = 10 (86.1% vs 82.9% accuracy) and k = 20 (78.3% vs 73.5%). DeepLOB wins clearly at k = 50 and k = 100.
+- **Simple models match deep learning only at short horizons.** On FI-2010 (3 seeds), logistic regression with lagged price history beats our DeepLOB at k = 10 (86.1% vs 83.1 ± 0.3% accuracy) and k = 20 (78.3% vs 74.1 ± 0.5%). DeepLOB wins clearly at k = 50 and k = 100.
 - **Leakage inflates published results, and we measured by how much.** On Optiver Realized Volatility, the 1st-place nearest-neighbour features keep only about **59%** of their gain once neighbours are restricted to the past.
 - **Ethereum's order book helps predict Bitcoin a little.** Macro-F1 improves by +0.016 at 10 s on all 4 segments, and the gain fades with horizon.
 
@@ -332,18 +332,36 @@ The gain is small but consistent, and it fades with horizon. That pattern fits E
 
 ### FI-2010 Setup 2
 
-The models train on days 1–7 and are tested on days 8–10. Accuracy (%):
+The models train on days 1–7 and are tested on days 8–10. Accuracy (%), mean ± std over 3 training seeds:
 
 | k | Naïve Flat | Logistic | LightGBM | Logistic + history | LightGBM + history | DeepLOB (ours) | DeepLOB (published) |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 10 | 70.7 | 70.8 | 53.1 | **86.1** | 77.4 | 82.9 | 84.5 |
-| 20 | 62.1 | 64.1 | 47.2 | **78.3** | 56.7 | 73.5 | 74.8 |
-| 50 | 47.3 | 43.9 | 43.9 | 66.5 | 64.4 | **78.2** | 80.5 |
-| 100 | 34.4 | 40.0 | 42.8 | 60.2 | 75.7 | **77.1** | — |
+| 10 | 70.7 | 70.8 | 53.2 | **86.1** | 78.0 ± 0.6 | 83.1 ± 0.3 | 84.5 |
+| 20 | 62.1 | 64.1 | 47.2 | **78.3** | 56.6 ± 0.0 | 74.1 ± 0.5 | 74.8 |
+| 50 | 47.3 | 43.9 | 44.1 | 66.5 | 64.4 ± 0.0 | **78.2 ± 0.2** | 80.5 |
+| 100 | 34.4 | 40.0 | 42.8 | 60.2 | 75.7 ± 0.1 | **77.5 ± 0.4** | — |
 
-*History* adds lagged changes of the 40 raw book columns to the 144 handcrafted features. On snapshot features alone, the simple models are far behind DeepLOB. With a short price history, logistic regression beats DeepLOB at k = 10 and 20. So DeepLOB's short-horizon advantage comes mostly from seeing a window of past books, not from its architecture. At k = 50 and 100, DeepLOB keeps a clear lead. Our DeepLOB is within 1.5–2.5 points of the published numbers.
+*History* adds lagged changes of the 40 raw book columns to the 144 handcrafted features. Logistic regression has no spread because its solver is deterministic and the test days are fixed. The seeds only vary DeepLOB's and LightGBM's training, and that variation is small (at most 0.6 points).
 
-**Incomplete:** the history-feature columns come from seed 0 only. Runs for seeds 1 and 2 were started but stopped before finishing, so there are no error bars. LightGBM + history at k = 20 (56.7%, against 77.4% at k = 10) looks like a training failure rather than a real result. [diagnose_fi2010_lightgbm.py](scripts/diagnose_fi2010_lightgbm.py) checks whether early stopping or the model is at fault, and the Colab notebook runs it along with the missing seeds.
+- **Short horizons: simple features with history beat DeepLOB.** At k = 10, logistic regression with history scores 86.1% against 83.1 ± 0.3% for our DeepLOB (and 84.5% published). At k = 20 it is 78.3% against 74.1 ± 0.5%. The gap is several times the seed-to-seed spread, so it is not a lucky seed. DeepLOB's short-horizon advantage over snapshot features comes mostly from seeing a window of past books, not from its architecture.
+- **Long horizons: DeepLOB wins clearly.** At k = 50 it leads by 12 points, and at k = 100 by 1.8 points over LightGBM with history.
+- **Our DeepLOB reproduces the paper** to within 0.7–2.3 points.
+
+![FI-2010 comparison](artifacts/figures_real/fi2010_comparison.png)
+
+**Why LightGBM + history fails at k = 20 (and underperforms at k = 10).** [diagnose_fi2010_lightgbm.py](scripts/diagnose_fi2010_lightgbm.py) retrained it with early stopping and at fixed numbers of boosting rounds ([csv](artifacts/fi2010/diagnose_lightgbm_history.csv)):
+
+| k | Rounds | Validation acc. | Test acc. | Predicted FLAT share on test | Actual FLAT share on test |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| 10 | 10 | 85.9% | 87.7% | 82% | 71% |
+| 10 | 356 (early stopping) | 86.0% | 77.4% | 62% | 71% |
+| 20 | 10 | 87.2% | 54.5% | 29% | 62% |
+| 20 | 446 (early stopping) | 87.6% | 56.7% | 28% | 62% |
+
+- **It is not an early-stopping bug.** At k = 20 the test accuracy is 54–57% at every number of rounds.
+- **Validation accuracy does not predict test accuracy.** It sits at 86–88% for every setting, while test accuracy ranges from 55% to 88%. The validation days cannot tell good models from bad ones here.
+- **The test days are calmer than the training days.** FLAT makes up 60% (k = 10) and 49% (k = 20) of training labels, but 71% and 62% of test labels. LightGBM learns to call moves from the size of recent book changes on the training days, and on the calmer test days it predicts far too few FLATs (28% against 62% at k = 20). Logistic regression is linear and degrades much less under this shift.
+- **The 87.7% at 10 rounds is not a valid result.** It was found by looking at test accuracy, which is exactly what a benchmark must not do. It does show that LightGBM *can* use these features well. A volatility-normalized version of the history features is the natural next test.
 
 ### Optiver Realized Volatility
 
@@ -427,7 +445,8 @@ ML_Project_2026/
 │   ├── sync_checkpoints.py                 # Moves run checkpoints between laptop and Colab
 │   ├── make_real_data_figures.py           # Figures for the real-data results
 │   ├── benchmark_trained_model.py          # Trained LightGBM -> C++ codegen + benchmark
-│   ├── diagnose_fi2010_lightgbm.py         # Checks the FI-2010 LightGBM + history k=20 result
+│   ├── diagnose_fi2010_lightgbm.py         # Why FI-2010 LightGBM + history fails at k=20
+│   ├── lgbm_to_cpp.py                      # Trained LightGBM -> C++ code generator
 │   ├── build_and_execute_notebook.py       # Builds and runs the submission notebook
 │   └── download_or_generate_data.py
 ├── notebooks/colab_run_all.ipynb           # One-click Colab runner for everything
@@ -513,7 +532,7 @@ The model, feature and extension tests need PyTorch. The simulator and validatio
 
 - **Small real-data sample.** The BTC data is about 12 days from one exchange, split into 4 segments, so error bars are wide.
 - **Coarse BTC data.** It has 1-second snapshots and no individual order events or queue positions, so passive fills are approximate and sub-second effects are invisible.
-- **FI-2010 is one seed.** The history-feature runs for extra seeds were stopped before finishing (see [FI-2010](#fi-2010-setup-2)).
+- **FI-2010 regime shift.** The test days are calmer than the training days, and the validation days don't reveal it, so models that are sensitive to volatility (LightGBM on raw history features) are understated there (see [FI-2010](#fi-2010-setup-2)).
 - **No persistent impact.** Our own orders walk the snapshot they arrive on, but they do not deplete the book in later snapshots.
 - **Simple strategies.** Experiment D sends one lot per signal up to an inventory cap. Experiment E adds confidence filtering and fixed-hold round trips, but there is no position sizing and no smarter exit logic.
 - **Short synthetic test windows.** About 90 s of trading per seed, so synthetic PnL is noisy and annualized risk metrics are not meaningful.
