@@ -1,7 +1,7 @@
 """Compile a trained LightGBM model into dependency-free C++ (nested if/else per tree).
 
-Same idea as Treelite/TL2cgen/lleaves. Used by scripts/benchmark_trained_model.py and
-cpp/labs/gen_trained_model.py. Needs only the LightGBM booster, no training data.
+Same idea as Treelite/TL2cgen/lleaves. Used by scripts/benchmark_trained_model.py.
+Needs only the LightGBM booster, no training data.
 """
 
 from pathlib import Path

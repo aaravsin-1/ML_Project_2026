@@ -34,8 +34,13 @@ weights/*.pth
 /logs/
 /cpp/generated/
 
-# Lab binaries
-/cpp/labs/build/
+# Personal C++ learning material (kept locally, not published)
+/cpp/LEARNING_PATH.md
+/cpp/labs/
+/cpp/tutorial/
+
+# Colab result downloads (copied into artifacts/ when needed)
+/notebooks/artifacts/
 
 # Local Python environment
 /.venv/

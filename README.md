@@ -41,7 +41,7 @@ How the original research plan ([project_research.md](project_research.md)) maps
 | 5.3 | Ablation and SHAP/LIME attribution | Experiment C, Experiment J (TreeSHAP) | Done: TreeSHAP for LightGBM, gradient × input for DeepLOB; LIME not used |
 | 6.1 | Spread crossing, fees, book walking, latency | Experiments D and E, execution simulator | Done |
 | 6.2 | Passive fills, adverse selection, VPIN-based market making | Experiments H and I | Done |
-| 7 | Low-latency C++ system | [C++ benchmark](#c20-latency-benchmark): compiled trained model, AVX2 features, latency benchmarks. Feed handling, order book engine, kernel bypass: [cpp/LEARNING_PATH.md](cpp/LEARNING_PATH.md) | In progress |
+| 7 | Low-latency C++ system | [C++ benchmark](#c20-latency-benchmark): compiled trained model, AVX2 features, latency benchmarks | Partly done: inference is benchmarked; feed handling, an order-book engine and kernel-bypass networking are future work |
 | 8 | Regimes where the edge survives | [Experiment G](#btc-does-the-edge-survive-in-any-regime-experiment-g) | Done: none found |
 
 ---
@@ -595,7 +595,7 @@ Latest run ([artifacts/cpp_latency_benchmarks.csv](artifacts/cpp_latency_benchma
 
 Throughput: about 399k snapshots/s, including timing overhead.
 
-**Trained model in C++.** [benchmark_trained_model.py](scripts/benchmark_trained_model.py) exports the LightGBM model trained on BTC segment 0 (k = 20) and generates C++ code for it. [trained_model_benchmark.cpp](cpp/src/trained_model_benchmark.cpp) then checks the C++ output against LightGBM on 20,000 test rows. The model has 109 boosting rounds × 3 classes (327 trees, 20,601 leaves) on 27 features. The C++ scores match LightGBM exactly (max abs diff 0, 100% argmax agreement). Single-row latency is 10.5 µs at P50 and 17.9 µs at P99 ([csv](artifacts/cpp_trained_model_benchmark.csv)). This run was taken while other jobs were using the CPU, so treat the timings as an upper bound. The [tutorial](cpp/tutorial/) and [optimization_comparison.cpp](cpp/src/optimization_comparison.cpp) compare AoS vs SoA layouts and branchless tree evaluation on the same kind of synthetic ensemble.
+**Trained model in C++.** [benchmark_trained_model.py](scripts/benchmark_trained_model.py) exports the LightGBM model trained on BTC segment 0 (k = 20) and generates C++ code for it. [trained_model_benchmark.cpp](cpp/src/trained_model_benchmark.cpp) then checks the C++ output against LightGBM on 20,000 test rows. The model has 109 boosting rounds × 3 classes (327 trees, 20,601 leaves) on 27 features. The C++ scores match LightGBM exactly (max abs diff 0, 100% argmax agreement). Single-row latency is 10.5 µs at P50 and 17.9 µs at P99 ([csv](artifacts/cpp_trained_model_benchmark.csv)). This run was taken while other jobs were using the CPU, so treat the timings as an upper bound. [optimization_comparison.cpp](cpp/src/optimization_comparison.cpp) compares AoS vs SoA layouts and branchless tree evaluation on the same kind of synthetic ensemble.
 
 ---
 
@@ -604,9 +604,7 @@ Throughput: about 399k snapshots/s, including timing overhead.
 ```
 ML_Project_2026/
 ├── README.md
-├── cpp/                                    # C++20 latency benchmark & SIMD tutorial
-│   ├── LEARNING_PATH.md                    # Self-study path: CPU basics to kernel bypass and tick-to-trade
-│   └── labs/                               # Runnable experiments for the learning path (labs 01-08)
+├── cpp/                                    # C++20 latency benchmarks, AVX2 features, trained-model codegen target
 ├── src/
 │   ├── config.py
 │   ├── data/

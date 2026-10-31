@@ -338,7 +338,7 @@ Putting it together, for a strategy with signal horizon $h$, system latency $L$ 
 
 - **Lower costs before better models:** passive execution on large-tick stocks with a queue-position model, using full LOBSTER order-by-order data over many days.
 - **Deep models on sub-second LOBSTER data,** to test whether the deep-wins-at-long-horizons pattern holds on Nasdaq.
-- **The systems half:** an order-book engine, an ITCH feed parser and kernel-bypass networking to measure real wire-to-order latency (planned in `cpp/LEARNING_PATH.md`), plus an idle-machine rerun of the C++ model benchmark.
+- **The systems half:** an order-book engine, an ITCH feed parser and kernel-bypass networking to measure real wire-to-order latency, plus an idle-machine rerun of the C++ model benchmark.
 - **A volatility-normalised history feature set** for FI-2010, to test the distribution-shift explanation.
 
 ## 9. Conclusion
