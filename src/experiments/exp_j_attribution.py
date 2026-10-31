@@ -197,6 +197,25 @@ def run_part1(n_segments: int = 4) -> None:
 
 # --------------------------------------------------------------------------- part 2 (GPU)
 
+def gradient_x_input(model, windows, device, batch_size: int = 128) -> np.ndarray:
+    """Mean |gradient x input| for the predicted class, summed over windows: shape (seq_len, features).
+
+    The model stays in eval mode (no dropout, batch-norm running statistics). cuDNN refuses an LSTM backward
+    pass in eval mode, so cuDNN is switched off for this pass only; the maths is the same, just slower."""
+    import torch
+    model.eval()
+    total = np.zeros(windows.shape[1:])
+    with torch.backends.cudnn.flags(enabled=False):
+        for start in range(0, len(windows), batch_size):
+            batch = torch.as_tensor(windows[start:start + batch_size], dtype=torch.float32).unsqueeze(1).to(device)
+            batch.requires_grad_(True)
+            out = model(batch)
+            out.gather(1, out.argmax(1, keepdim=True)).sum().backward()
+            total += (batch.grad * batch).abs().sum(dim=0).squeeze(0).detach().cpu().numpy()
+            model.zero_grad(set_to_none=True)
+    return total
+
+
 def run_part2_deeplob(n_segments: int = 4, epochs: int = 8, attribution_windows: int = 2000) -> None:
     import torch
     from src.data.lob_dataset import build_indexed_dataloaders
@@ -204,11 +223,11 @@ def run_part2_deeplob(n_segments: int = 4, epochs: int = 8, attribution_windows:
     from src.models.registry import DeepLearningTrainer, balanced_class_weights
 
     (OUT / "sessions").mkdir(parents=True, exist_ok=True)
-    attr_rows = []
     for session in btc_sessions(n_segments):
         ck = OUT / "sessions" / f"{session.name}_deeplob.npz"
-        if ck.exists():
-            print(f"[+] {session.name}: DeepLOB predictions already saved")
+        ck_attr = OUT / "sessions" / f"{session.name}_deeplob_attribution.csv"
+        if ck.exists() and ck_attr.exists():
+            print(f"[+] {session.name}: DeepLOB predictions and attribution already saved")
             continue
         print(f"\n######## {session.name}: DeepLOB ########")
         torch.manual_seed(session.seed)
@@ -221,33 +240,28 @@ def run_part2_deeplob(n_segments: int = 4, epochs: int = 8, attribution_windows:
                                       class_weights=balanced_class_weights(y[idx["train"]]))
         trainer.fit(loaders["train"], loaders["val"], epochs=epochs, patience=3)
         _, _, _, preds, _ = trainer.evaluate(loaders["test"])
+        # save the predictions first, so a failure in the attribution below doesn't lose the training
+        np.savez(ck, row=idx["test"], pred=np.asarray(preds))
+        print(f"[+] saved {ck.name}")
 
         # gradient x input on a sample of test windows, for the predicted class
-        model, dev = trainer.model, trainer.device
-        model.eval()
         rng = np.random.default_rng(session.seed)
         rows = np.sort(rng.choice(idx["test"], size=min(attribution_windows, len(idx["test"])), replace=False))
-        feats = torch.tensor(data.deep_feat, dtype=torch.float32)
-        total = np.zeros((SEQ_LEN, data.deep_feat.shape[1]))
-        for start in range(0, len(rows), 128):
-            batch = torch.stack([feats[r - SEQ_LEN + 1:r + 1] for r in rows[start:start + 128]]).unsqueeze(1).to(dev)
-            batch.requires_grad_(True)
-            out = model(batch)
-            out.gather(1, out.argmax(1, keepdim=True)).sum().backward()
-            total += (batch.grad * batch).abs().sum(dim=0).squeeze(0).detach().cpu().numpy()
+        windows = np.stack([data.deep_feat[r - SEQ_LEN + 1:r + 1] for r in rows])
+        total = gradient_x_input(trainer.model, windows, trainer.device)
         total /= total.sum()
-        cols = data.deep_feat.shape[1]
-        for c in range(cols):
+        attr_rows = []
+        for c in range(data.deep_feat.shape[1]):
             level, kind = c // 4, ["ask_price", "ask_size", "bid_price", "bid_size"][c % 4]
             attr_rows.append({"segment": session.seed, "level": level + 1, "kind": kind,
                               "share_last_10_steps": float(total[-10:, c].sum()),
                               "share_total": float(total[:, c].sum())})
-        np.savez(ck, row=idx["test"], pred=np.asarray(preds))
-        print(f"[+] saved {ck.name}")
-    if attr_rows:
-        path = OUT / "deeplob_attribution.csv"
-        prev = pd.read_csv(path) if path.exists() else pd.DataFrame()
-        pd.concat([prev, pd.DataFrame(attr_rows)]).to_csv(path, index=False)
+        pd.DataFrame(attr_rows).to_csv(ck_attr, index=False)
+        print(f"[+] saved {ck_attr.name}")
+
+    parts = sorted((OUT / "sessions").glob("*_deeplob_attribution.csv"))
+    if len(parts) == n_segments:
+        pd.concat(pd.read_csv(f) for f in parts).to_csv(OUT / "deeplob_attribution.csv", index=False)
 
 
 if __name__ == "__main__":

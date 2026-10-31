@@ -73,6 +73,29 @@ def test_deeplob_forward():
     assert out.shape == (4, 3)
 
 
+def test_deeplob_attribution_runs_in_eval_mode():
+    """Gradient x input for DeepLOB in eval mode. On a GPU this is the case cuDNN rejects (its LSTM backward
+    needs training mode), which crashed Experiment J on Colab; the attribution must not change the model."""
+    from src.experiments.exp_j_attribution import gradient_x_input
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch.manual_seed(0)
+    model = DeepLOB(num_classes=3, lstm_hidden=16).to(device)
+    model.eval()
+    windows = np.random.default_rng(0).normal(size=(5, 100, 40)).astype(np.float32)
+    x = torch.as_tensor(windows).unsqueeze(1).to(device)
+    with torch.no_grad():
+        before = model(x)
+    bn_stats = [b.clone() for b in model.buffers()]
+
+    total = gradient_x_input(model, windows, device, batch_size=2)
+    assert total.shape == (100, 40)
+    assert np.isfinite(total).all() and (total >= 0).all() and total.sum() > 0
+    assert not model.training  # still in eval mode, so dropout is off and batch-norm stats are frozen
+    assert all(torch.equal(a, b) for a, b in zip(bn_stats, model.buffers()))
+    with torch.no_grad():
+        assert torch.allclose(before, model(x))
+
+
 def test_tlob_forward():
     """Validates TLOB Transformer dual attention and Bilinear Normalization."""
     model = TLOB(num_features=40, seq_len=100, d_model=32, num_heads=2, num_layers=1)
