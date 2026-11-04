@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOB Project Diagrams</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Layout: one reading column; each figure gets its own horizontally scrollable stage. */
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #141820;
+  --muted: #5a6371;
+  --line: #c8ced8;
+  --accent: #2456c8;
+  --gain: #1d8549;
+  --cost: #c2410c;
+  --display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218;
+    --surface: #171b23;
+    --ink: #e5e8ed;
+    --muted: #9aa3b0;
+    --line: #353c48;
+    --accent: #7ea4ff;
+    --gain: #4cc38a;
+    --cost: #f28b4f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218;
+  --surface: #171b23;
+  --ink: #e5e8ed;
+  --muted: #9aa3b0;
+  --line: #353c48;
+  --accent: #7ea4ff;
+  --gain: #4cc38a;
+  --cost: #f28b4f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.55 var(--sans);
+}
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 20px 64px;
+  display: grid;
+  gap: 48px;
+}
+header { display: grid; gap: 10px; max-width: 70ch; }
+.kicker { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1, h2 { font-family: var(--display); font-weight: 700; text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.08; }
+h2 { font-size: 24px; line-height: 1.2; display: flex; gap: 12px; align-items: baseline; }
+h2 .n { font: 500 13px/1 var(--mono); color: var(--muted); }
+header p, section > p { margin: 0; color: var(--muted); max-width: 68ch; }
+section { display: grid; gap: 14px; }
+figure { margin: 0; display: grid; gap: 10px; }
+.stage {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  overflow-x: auto;
+}
+.stage svg { display: block; width: 100%; height: auto; min-width: 820px; }
+figcaption { font-size: 14px; color: var(--muted); max-width: 80ch; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+/* SVG vocabulary, all from the tokens so both themes work */
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.2; }
+.box.hl { stroke: var(--accent); stroke-width: 2.2; }
+.box.win { fill: var(--accent); fill-opacity: .08; stroke: var(--accent); stroke-width: 2.2; }
+.t { fill: var(--ink); font: 600 13px var(--sans); }
+.s { fill: var(--muted); font: 11px var(--mono); }
+.s.ink { fill: var(--ink); }
+.s.acc { fill: var(--accent); font-weight: 500; }
+.s.costc { fill: var(--cost); font-weight: 500; }
+.h { fill: var(--muted); font: 500 11px var(--mono); letter-spacing: .06em; }
+.ht { fill: var(--ink); font: 700 14px var(--display); }
+.row { fill: var(--ink); font: 700 15px var(--display); }
+.edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.edge.acc { stroke: var(--accent); stroke-width: 2.4; }
+.edge.costl { stroke: var(--cost); stroke-dasharray: 5 4; stroke-width: 1.8; }
+.dash { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 1; fill: none; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.zero { stroke: var(--ink); stroke-width: 1.4; }
+.ah { fill: var(--muted); }
+.ah.acc { fill: var(--accent); }
+.seg-train { fill: var(--accent); fill-opacity: .16; stroke: var(--accent); }
+.seg-val { fill: var(--muted); fill-opacity: .14; stroke: var(--muted); }
+.seg-test { fill: var(--gain); fill-opacity: .16; stroke: var(--gain); }
+.seg-purge { fill: var(--cost); }
+.bar-gain { fill: var(--gain); }
+.bar-cost { fill: var(--cost); }
+.bar-net { fill: var(--ink); fill-opacity: .78; }
+.dot { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+.dot.acc { stroke: var(--accent); }
+.val { fill: var(--ink); font: 600 13px var(--mono); }
+.lbl { fill: var(--ink); font: 600 12.5px var(--sans); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font: 600 12px var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 600; white-space: nowrap; }
+.tablewrap { overflow-x: auto; }
+footer { color: var(--muted); font-size: 13px; }
+code { font: 13px var(--mono); }
+@media (max-width: 600px) {
+  main { padding: 28px 16px 48px; gap: 36px; }
+  td:first-child { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <span class="kicker">Limit order book ML · architecture &amp; flow</span>
+  <h1>How the project turns order books into predictions, and predictions into trades</h1>
+  <p>Five diagrams, drawn from the code in <code>src/</code> and the saved results in <code>artifacts/</code>. Numbers are Coinbase BTC-USD at a 20-second horizon unless a caption says otherwise.</p>
+</header>
+
+<!-- 1. System architecture -->
+<section>
+  <h2><span class="n">01</span>System architecture</h2>
+  <figure>
+    <div class="stage">
+      <svg viewBox="0 0 1224 480" role="img" aria-label="Pipeline: five data sources are resampled, labelled, split by time and normalised; then turned into 27 hand-made features for tabular models or a 100 by 40 raw book window for sequence models; predictions go to scoring, the execution simulator and a C++ inference benchmark.">
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- column headers -->
+        <text class="h" x="16" y="34">01 DATA</text>
+        <text class="h" x="250" y="34">02 PREPARE</text>
+        <text class="h" x="490" y="34">03 REPRESENT</text>
+        <text class="h" x="772" y="34">04 MODEL</text>
+        <text class="h" x="1012" y="34">05 EVALUATE &amp; TRADE</text>
+
+        <!-- A: data sources -->
+        <rect class="box hl" x="16" y="60" width="190" height="68" rx="7"/>
+        <text class="t" x="30" y="86">Coinbase BTC + ETH</text>
+        <text class="s" x="30" y="106">1 s snapshots · 15 levels</text>
+
+        <rect class="box" x="16" y="144" width="190" height="68" rx="7"/>
+        <text class="t" x="30" y="170">LOBSTER Nasdaq</text>
+        <text class="s" x="30" y="190">every order · 5 stocks</text>
+
+        <rect class="box" x="16" y="228" width="190" height="68" rx="7"/>
+        <text class="t" x="30" y="254">FI-2010</text>
+        <text class="s" x="30" y="274">benchmark · 144 features</text>
+
+        <rect class="box" x="16" y="312" width="190" height="68" rx="7"/>
+        <text class="t" x="30" y="338">Optiver Kaggle (×2)</text>
+        <text class="s" x="30" y="358">volatility · auction</text>
+
+        <rect class="box" x="16" y="396" width="190" height="68" rx="7"/>
+        <text class="t" x="30" y="422">Synthetic generator</text>
+        <text class="s" x="30" y="442">planted signal · 5 seeds</text>
+
+        <!-- A -> B bus -->
+        <path class="edge" d="M206,94 H228 M206,178 H228 M206,262 H228 M206,346 H228 M206,430 H228 M228,94 V430"/>
+        <path class="edge" d="M228,114 H248" marker-end="url(#a1)"/>
+
+        <!-- B: preparation chain -->
+        <rect class="box" x="250" y="78" width="196" height="72" rx="7"/>
+        <text class="t" x="264" y="104">Resample &amp; align</text>
+        <text class="s" x="264" y="124">1 s or 100 ms clock</text>
+
+        <rect class="box" x="250" y="174" width="196" height="72" rx="7"/>
+        <text class="t" x="264" y="200">Label each row</text>
+        <text class="s" x="264" y="220">mid at t+k vs t</text>
+        <text class="s" x="264" y="236">→ UP · FLAT · DOWN</text>
+
+        <rect class="box" x="250" y="270" width="196" height="72" rx="7"/>
+        <text class="t" x="264" y="296">Purged time split</text>
+        <text class="s" x="264" y="316">70 / 15 / 15 by time</text>
+        <text class="s" x="264" y="332">borders dropped</text>
+
+        <rect class="box" x="250" y="366" width="196" height="72" rx="7"/>
+        <text class="t" x="264" y="392">Fit scalers on train</text>
+        <text class="s" x="264" y="412">no look-ahead</text>
+
+        <path class="edge" d="M348,150 V172" marker-end="url(#a1)"/>
+        <path class="edge" d="M348,246 V268" marker-end="url(#a1)"/>
+        <path class="edge" d="M348,342 V364" marker-end="url(#a1)"/>
+
+        <!-- B -> C fork -->
+        <path class="edge" d="M446,402 H468 V161"/>
+        <path class="edge" d="M468,161 H488" marker-end="url(#a1)"/>
+        <path class="edge" d="M468,345 H488" marker-end="url(#a1)"/>
+
+        <!-- C: representations -->
+        <rect class="box" x="490" y="96" width="220" height="130" rx="7"/>
+        <text class="t" x="504" y="120">27 hand-made features</text>
+        <text class="s" x="504" y="142">order imbalance L1·L3·L5·L10</text>
+        <text class="s" x="504" y="160">OFI + lags · multi-level OFI</text>
+        <text class="s" x="504" y="178">micro-price gap · spread</text>
+        <text class="s" x="504" y="196">book slopes · VPIN</text>
+
+        <rect class="box" x="490" y="290" width="220" height="110" rx="7"/>
+        <text class="t" x="504" y="314">Raw order book window</text>
+        <text class="s" x="504" y="336">100 snapshots × 40 values</text>
+        <text class="s" x="504" y="354">price + size · 10 levels</text>
+        <text class="s" x="504" y="372">both sides of the book</text>
+
+        <!-- C -> D -->
+        <path class="edge" d="M710,161 H770" marker-end="url(#a1)"/>
+        <text class="s" x="741" y="153" text-anchor="middle">27 cols</text>
+        <path class="edge" d="M710,345 H770" marker-end="url(#a1)"/>
+        <text class="s" x="741" y="337" text-anchor="middle">100×40</text>
+
+        <!-- D: models -->
+        <rect class="box win" x="772" y="96" width="196" height="130" rx="7"/>
+        <text class="t" x="786" y="120">Tabular · CPU</text>
+        <text class="s" x="786" y="142">Naive momentum</text><text class="s" x="954" y="142" text-anchor="end">0.413</text>
+        <text class="s" x="786" y="160">Logistic regression</text><text class="s" x="954" y="160" text-anchor="end">0.448</text>
+        <text class="s" x="786" y="178">Random Forest</text><text class="s" x="954" y="178" text-anchor="end">0.465</text>
+        <text class="s acc" x="786" y="200">LightGBM  best</text><text class="s acc" x="954" y="200" text-anchor="end">0.467</text>
+
+        <rect class="box" x="772" y="290" width="196" height="110" rx="7"/>
+        <text class="t" x="786" y="314">Sequence · GPU</text>
+        <text class="s" x="786" y="336">LSTM</text><text class="s" x="954" y="336" text-anchor="end">0.397</text>
+        <text class="s" x="786" y="354">DeepLOB  CNN+LSTM</text><text class="s" x="954" y="354" text-anchor="end">0.401</text>
+        <text class="s" x="786" y="372">TLOB  transformer</text><text class="s" x="954" y="372" text-anchor="end">0.449</text>
+
+        <!-- D -> E bus -->
+        <path class="edge" d="M968,161 H990 M968,345 H990 M990,118 V376"/>
+        <path class="edge" d="M990,118 H1010" marker-end="url(#a1)"/>
+        <path class="edge" d="M990,247 H1010" marker-end="url(#a1)"/>
+        <path class="edge" d="M990,376 H1010" marker-end="url(#a1)"/>
+
+        <!-- E: evaluation and trading -->
+        <rect class="box" x="1012" y="76" width="196" height="84" rx="7"/>
+        <text class="t" x="1026" y="100">Score predictions</text>
+        <text class="s" x="1026" y="120">macro-F1 · bootstrap CI</text>
+        <text class="s" x="1026" y="138">McNemar · SHAP</text>
+
+        <rect class="box" x="1012" y="192" width="196" height="110" rx="7"/>
+        <text class="t" x="1026" y="216">Execution simulator</text>
+        <text class="s" x="1026" y="238">cross spread · walk book</text>
+        <text class="s" x="1026" y="256">taker fees · latency</text>
+        <text class="s" x="1026" y="274">passive queue fills</text>
+
+        <rect class="box" x="1012" y="334" width="196" height="84" rx="7"/>
+        <text class="t" x="1026" y="358">C++ inference</text>
+        <text class="s" x="1026" y="378">exported LightGBM</text>
+        <text class="s" x="1026" y="396">10.5 µs per prediction</text>
+      </svg>
+    </div>
+    <figcaption><b>Two paths, one test set.</b> Every dataset goes through the same preparation. Tabular models read 27 engineered features; sequence models read the last 100 raw snapshots. Both are scored on exactly the same test rows, so their numbers (macro-F1, random guessing = 0.333) compare like for like. Only LightGBM is exported to C++.</figcaption>
+  </figure>
+</section>
+
+<!-- 2. Split -->
+<section>
+  <h2><span class="n">02</span>How the data is split without leaking the future</h2>
+  <figure>
+    <div class="stage">
+      <svg viewBox="0 0 1000 230" role="img" aria-label="Timeline split: train 70 percent, a purged gap, validation 15 percent, a purged gap, test 15 percent. Scalers and thresholds are fitted on train only; validation is used for early stopping; test is scored once on the same rows for every model.">
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+        <text class="s costc" x="689" y="50" text-anchor="middle">purge</text>
+        <text class="s costc" x="832" y="50" text-anchor="middle">purge</text>
+
+        <rect class="seg-train" x="40" y="60" width="644" height="44" rx="4"/>
+        <rect class="seg-purge" x="684" y="60" width="10" height="44"/>
+        <rect class="seg-val" x="694" y="60" width="133" height="44" rx="4"/>
+        <rect class="seg-purge" x="827" y="60" width="10" height="44"/>
+        <rect class="seg-test" x="837" y="60" width="123" height="44" rx="4"/>
+
+        <text class="lbl" x="362" y="87" text-anchor="middle">Train · 70%</text>
+        <text class="lbl" x="760" y="87" text-anchor="middle">Validation · 15%</text>
+        <text class="lbl" x="898" y="87" text-anchor="middle">Test · 15%</text>
+
+        <path class="dash" d="M362,104 V124 M760,104 V124 M898,104 V124"/>
+        <text class="s ink" x="362" y="142" text-anchor="middle">fit scalers, PCA, label thresholds</text>
+        <text class="s" x="362" y="158" text-anchor="middle">train every model here</text>
+        <text class="s ink" x="760" y="142" text-anchor="middle">early stopping</text>
+        <text class="s" x="760" y="158" text-anchor="middle">pick trade thresholds</text>
+        <text class="s ink" x="898" y="142" text-anchor="middle">scored once</text>
+        <text class="s" x="898" y="158" text-anchor="middle">same rows, every model</text>
+
+        <path class="edge" d="M40,196 H956" marker-end="url(#a2)"/>
+        <text class="s" x="40" y="216">oldest</text>
+        <text class="s" x="960" y="216" text-anchor="end">newest</text>
+      </svg>
+    </div>
+    <figcaption><b>Nothing is shuffled.</b> The last k rows before each border are dropped (red), because their labels look k steps into the next split. Bitcoin is cut into 4 separate ~3-day segments, and each one is split like this, which is where the ± error bars come from.</figcaption>
+  </figure>
+</section>
+
+<!-- 3. Models -->
+<section>
+  <h2><span class="n">03</span>Inside the three main models</h2>
+  <figure>
+    <div class="stage">
+      <svg viewBox="0 0 1100 400" role="img" aria-label="Three model pipelines. LightGBM: 27 features feed a sequence of trees where each tree fixes the previous trees' errors, then scores are summed; BTC macro-F1 0.467. DeepLOB: a 100 by 40 input goes through three convolution blocks, an inception module and an LSTM; F1 0.401. TLOB: the same input is normalised, projected, passed through attention across time, pooled and classified; F1 0.449.">
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="a3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah acc" d="M0,0 L10,5 L0,10 z"/></marker>
+        </defs>
+
+        <!-- Row 1: LightGBM -->
+        <text class="row" x="18" y="32">LightGBM</text>
+        <text class="s" x="98" y="32">boosted decision trees · hand-made features · CPU</text>
+        <rect class="box" x="18" y="46" width="128" height="56" rx="7"/><text class="t" x="32" y="70">27 features</text><text class="s" x="32" y="88">one row per time</text>
+        <rect class="box" x="174" y="46" width="128" height="56" rx="7"/><text class="t" x="188" y="70">Tree 1</text><text class="s" x="188" y="88">first guess</text>
+        <rect class="box" x="330" y="46" width="128" height="56" rx="7"/><text class="t" x="344" y="70">Tree 2</text><text class="s" x="344" y="88">fixes tree 1</text>
+        <rect class="box" x="486" y="46" width="128" height="56" rx="7"/><text class="t" x="500" y="70">Trees 3 … 108</text><text class="s" x="500" y="88">keep correcting</text>
+        <rect class="box" x="642" y="46" width="128" height="56" rx="7"/><text class="t" x="656" y="70">Tree 109</text><text class="s" x="656" y="88">early-stopped</text>
+        <rect class="box" x="798" y="46" width="128" height="56" rx="7"/><text class="t" x="812" y="70">Sum scores</text><text class="s" x="812" y="88">per class</text>
+        <rect class="box win" x="954" y="46" width="128" height="56" rx="7"/><text class="t" x="968" y="70">Output</text><text class="s acc" x="968" y="88">F1 0.467</text>
+        <path class="edge acc" d="M146,74 H172 M302,74 H328 M458,74 H484 M614,74 H640 M770,74 H796 M926,74 H952" marker-end="url(#a3b)"/>
+
+        <!-- Row 2: DeepLOB -->
+        <text class="row" x="18" y="162">DeepLOB</text>
+        <text class="s" x="90" y="162">convolution + inception + LSTM · raw book · GPU</text>
+        <rect class="box" x="18" y="176" width="128" height="56" rx="7"/><text class="t" x="32" y="200">Input</text><text class="s" x="32" y="218">100 × 40</text>
+        <rect class="box" x="174" y="176" width="128" height="56" rx="7"/><text class="t" x="188" y="200">Conv block 1</text><text class="s" x="188" y="218">price+size 40→20</text>
+        <rect class="box" x="330" y="176" width="128" height="56" rx="7"/><text class="t" x="344" y="200">Conv block 2</text><text class="s" x="344" y="218">bid+ask 20→10</text>
+        <rect class="box" x="486" y="176" width="128" height="56" rx="7"/><text class="t" x="500" y="200">Conv block 3</text><text class="s" x="500" y="218">10 levels → 1</text>
+        <rect class="box" x="642" y="176" width="128" height="56" rx="7"/><text class="t" x="656" y="200">Inception</text><text class="s" x="656" y="218">1·3·5-step views</text>
+        <rect class="box" x="798" y="176" width="128" height="56" rx="7"/><text class="t" x="812" y="200">LSTM</text><text class="s" x="812" y="218">64 memory units</text>
+        <rect class="box" x="954" y="176" width="128" height="56" rx="7"/><text class="t" x="968" y="200">Output</text><text class="s" x="968" y="218">F1 0.401</text>
+        <path class="edge" d="M146,204 H172 M302,204 H328 M458,204 H484 M614,204 H640 M770,204 H796 M926,204 H952" marker-end="url(#a3)"/>
+
+        <!-- Row 3: TLOB -->
+        <text class="row" x="18" y="292">TLOB</text>
+        <text class="s" x="62" y="292">transformer with attention · raw book · GPU</text>
+        <rect class="box" x="18" y="306" width="128" height="56" rx="7"/><text class="t" x="32" y="330">Input</text><text class="s" x="32" y="348">100 × 40</text>
+        <rect class="box" x="174" y="306" width="128" height="56" rx="7"/><text class="t" x="188" y="330">BiN</text><text class="s" x="188" y="348">rescale inputs</text>
+        <rect class="box" x="330" y="306" width="128" height="56" rx="7"/><text class="t" x="344" y="330">Project</text><text class="s" x="344" y="348">40 → 64 per step</text>
+        <rect class="box" x="486" y="306" width="128" height="56" rx="7"/><text class="t" x="500" y="330">Self-attention</text><text class="s" x="500" y="348">across time</text>
+        <rect class="box" x="642" y="306" width="128" height="56" rx="7"/><text class="t" x="656" y="330">2 blocks</text><text class="s" x="656" y="348">4 heads + FFN</text>
+        <rect class="box" x="798" y="306" width="128" height="56" rx="7"/><text class="t" x="812" y="330">Pool</text><text class="s" x="812" y="348">mean + last step</text>
+        <rect class="box" x="954" y="306" width="128" height="56" rx="7"/><text class="t" x="968" y="330">Output</text><text class="s" x="968" y="348">F1 0.449</text>
+        <path class="edge" d="M146,334 H172 M302,334 H328 M458,334 H484 M614,334 H640 M770,334 H796 M926,334 H952" marker-end="url(#a3)"/>
+      </svg>
+    </div>
+    <figcaption><b>LightGBM wins with the simplest pipeline.</b> It reads ready-made features and adds trees, each correcting the ones before (on BTC it stopped at 109 rounds, 3 trees per round, one per class). DeepLOB and TLOB must learn their own features from the raw book. Output scores are BTC macro-F1 at 20 s. Note: our TLOB applies attention across time steps in both stages, a simplification of the original paper.</figcaption>
+  </figure>
+</section>
+
+<!-- 4. Trade flow -->
+<section>
+  <h2><span class="n">04</span>What one Bitcoin trade looks like</h2>
+  <figure>
+    <div class="stage">
+      <svg viewBox="0 0 1000 150" role="img" aria-label="Trade timeline: at t equals 0 the model says UP; at 1 second the strategy buys 0.1 BTC at the ask; it holds 20 seconds; at 21 seconds it sells at the bid and pays fees both ways.">
+        <path class="edge costl" d="M80,70 H300"/>
+        <path class="edge acc" d="M300,70 H900"/>
+        <circle class="dot" cx="80" cy="70" r="8"/>
+        <circle class="dot acc" cx="300" cy="70" r="8"/>
+        <circle class="dot acc" cx="900" cy="70" r="8"/>
+
+        <text class="s costc" x="190" y="58" text-anchor="middle">1 s delay</text>
+        <text class="s acc" x="600" y="58" text-anchor="middle">hold 20 s</text>
+
+        <text class="val" x="80" y="38" text-anchor="middle">t = 0 s</text>
+        <text class="lbl" x="80" y="102" text-anchor="middle">Model says UP</text>
+        <text class="s" x="80" y="120" text-anchor="middle">top 2% confidence</text>
+
+        <text class="val" x="300" y="38" text-anchor="middle">t = 1 s</text>
+        <text class="lbl" x="300" y="102" text-anchor="middle">Buy 0.1 BTC at the ask</text>
+        <text class="s" x="300" y="120" text-anchor="middle">next snapshot</text>
+
+        <text class="val" x="900" y="38" text-anchor="middle">t = 21 s</text>
+        <text class="lbl" x="900" y="102" text-anchor="middle">Sell at the bid</text>
+        <text class="s" x="900" y="120" text-anchor="middle">4 bp fee each way</text>
+      </svg>
+    </div>
+    <figcaption><b>A round trip through the book.</b> The data is seen once a second, so the earliest fill is one snapshot after the decision. 0.1 BTC is about $6,000, so 1 bp is about $0.60 per trade.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="stage">
+      <svg viewBox="0 0 1000 420" role="img" aria-label="Waterfall chart in basis points per round trip: predicted move plus 2.23, entering one second late minus 0.75, crossing the spread minus 1.01, taker fees minus 8.00, net minus 7.53.">
+        <!-- grid and axis: y = 115 - 30 * bp -->
+        <path class="grid" d="M90,55 H970 M90,175 H970 M90,235 H970 M90,295 H970 M90,355 H970"/>
+        <path class="zero" d="M90,115 H970"/>
+        <text class="s" x="80" y="59" text-anchor="end">+2</text>
+        <text class="s" x="80" y="119" text-anchor="end">0</text>
+        <text class="s" x="80" y="179" text-anchor="end">−2</text>
+        <text class="s" x="80" y="239" text-anchor="end">−4</text>
+        <text class="s" x="80" y="299" text-anchor="end">−6</text>
+        <text class="s" x="80" y="359" text-anchor="end">−8</text>
+        <text class="s" x="24" y="205" text-anchor="middle" transform="rotate(-90 24 205)">bp per round trip</text>
+
+        <!-- bars -->
+        <rect class="bar-gain" x="110" y="48.1" width="120" height="66.9"/>
+        <rect class="bar-cost" x="290" y="48.1" width="120" height="22.5"/>
+        <rect class="bar-cost" x="470" y="70.6" width="120" height="30.3"/>
+        <rect class="bar-cost" x="650" y="100.9" width="120" height="240"/>
+        <rect class="bar-net" x="830" y="115" width="120" height="225.9"/>
+
+        <!-- connectors -->
+        <path class="dash" d="M230,48.1 H290 M410,70.6 H470 M590,100.9 H650 M770,340.9 H830"/>
+
+        <!-- values -->
+        <text class="val" x="170" y="40" text-anchor="middle">+2.23</text>
+        <text class="val" x="350" y="40" text-anchor="middle">−0.75</text>
+        <text class="val" x="530" y="62" text-anchor="middle">−1.01</text>
+        <text class="val" x="710" y="362" text-anchor="middle">−8.00</text>
+        <text class="val" x="890" y="362" text-anchor="middle">−7.53</text>
+
+        <!-- categories -->
+        <text class="lbl" x="170" y="392" text-anchor="middle">Predicted move</text>
+        <text class="lbl" x="350" y="392" text-anchor="middle">Enter 1 s late</text>
+        <text class="lbl" x="530" y="392" text-anchor="middle">Cross spread</text>
+        <text class="lbl" x="710" y="392" text-anchor="middle">Taker fees</text>
+        <text class="lbl" x="890" y="392" text-anchor="middle">Net per trade</text>
+        <text class="s" x="710" y="410" text-anchor="middle">4 bp × 2</text>
+        <text class="s" x="890" y="410" text-anchor="middle">≈ −$4.52</text>
+      </svg>
+    </div>
+    <figcaption><b>Where the money goes.</b> For the model's most confident 2% of signals (right 72% of the time), the edge before fees is only +0.47 bp. Fees alone are about 17 times that. The average 20-second move is about 4.3 bp, so even a perfect forecast could not cover an 8 bp round trip.</figcaption>
+  </figure>
+</section>
+
+<!-- 5. Datasets -->
+<section>
+  <h2><span class="n">05</span>Which dataset answered which question</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Dataset</th><th>Question</th><th>Answer</th></tr></thead>
+      <tbody>
+        <tr><td>Synthetic</td><td>Does the pipeline work and avoid leakage?</td><td>Yes. LightGBM finds the planted signal (0.584); leakage checks pass.</td></tr>
+        <tr><td>FI-2010</td><td>Does our DeepLOB match the paper?</td><td>Within 0.7–2.3 points. Simple models win at 10–20 events, DeepLOB at 50–100.</td></tr>
+        <tr><td>Coinbase BTC</td><td>Predictable? Profitable?</td><td>Slightly predictable (0.467 vs 0.333 random). Not profitable: about 0.5 bp edge vs 8 bp fees.</td></tr>
+        <tr><td>BTC + ETH</td><td>Does another coin help?</td><td>A little: +0.016 macro-F1 at 10 s, on all 4 segments.</td></tr>
+        <tr><td>LOBSTER</td><td>Does tick size matter?</td><td>Yes. Large-tick INTC and MSFT are predictable at 1–5 s; small-tick AMZN and GOOG mostly are not.</td></tr>
+        <tr><td>Optiver RVP</td><td>Do winning Kaggle features leak the future?</td><td>Yes. Only about 59% of their gain survives with past-only data.</td></tr>
+        <tr><td>Optiver Close</td><td>Can ML predict the closing auction?</td><td>About 2.4% better than predicting zero; retraining helps a little.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>Sources: <code>src/models/</code>, <code>src/experiments/</code>, <code>src/execution/simulator.py</code>, <code>README.md</code> and <code>artifacts/btc/tradability/edge_decomposition.csv</code>.</footer>
+</main>
+</body>
+</html>
