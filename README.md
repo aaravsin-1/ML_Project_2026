@@ -243,6 +243,9 @@ The test-set signals of the trained LightGBM and DeepLOB models from Experiment 
 Interpretation: both models lose about the same amount per millisecond of latency (≈$390–400 from 0 to 100 ms). LightGBM's advantage over DeepLOB is already present at zero latency, so it comes from better signals, not faster inference. At the measured latencies, DeepLOB's extra ~2.3 ms costs about $10 (≈$109 at 0.14 ms vs ≈$99 at 2.4 ms), which is small next to the ~$350 signal-quality gap. The drop from 0 to 0.05 ms for both models is a discretization effect: at zero latency the order fills against the very snapshot the decision was made on, while any positive latency means the next event. In seed 0 DeepLOB edges out LightGBM. The seed-to-seed spread in PnL is large compared with the means, so treat the absolute numbers as indicative.
 
 ![Experiment D Equity](artifacts/experiment_d_equity_curves.png)
+
+*Equity curves for LightGBM's signals on seed 0 (fantasy +$1,727, aggressive taker +$188, passive maker −$27 on 5 fills). Regenerate with `scripts/plot_exp_d_equity.py`.*
+
 ![Experiment D Latency](artifacts/experiment_d_latency_vs_profit.png)
 
 ---
