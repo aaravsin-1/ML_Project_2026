@@ -1,2 +1,5 @@
 *.log
 !data/*.log
+slides/node_modules/
+slides/package-lock.json
+.~lock.*#

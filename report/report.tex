@@ -163,7 +163,7 @@ Data were collected from five real sources (one-second Coinbase BTC-USD and ETH-
 
 \begin{itemize}[leftmargin=1.5em, itemsep=1pt, topsep=3pt]
   \item \textbf{The book is predictive, but modestly.} On BTC at 20\,s, LightGBM reaches macro-F1 0.467 (random 0.333, momentum 0.413) and a one-vs-rest ROC-AUC of about 0.66. It beats every other model with block-bootstrap confidence intervals that exclude zero. On large-tick Nasdaq stocks the signal is stronger and peaks 1--5\,s ahead.
-  \item \textbf{Simple models match deep ones at short horizons.} On FI-2010, logistic regression with book history beats our DeepLOB at $k=10$ (86.1\% vs 83.1\%), while DeepLOB wins at $k=50$--100. Our DeepLOB reproduces the published paper to within 0.7--2.3 points.
+  \item \textbf{Simpler models beat deep networks at short horizons, in accuracy as well as speed.} On BTC at 20\,s, LightGBM is more accurate than DeepLOB (accuracy 0.476 vs 0.429, macro-F1 0.467 vs 0.401), the LSTM and TLOB. On FI-2010, logistic regression with book history beats our DeepLOB at $k=10$ (86.1\% vs 83.1\%). DeepLOB wins only at longer horizons ($k=50$--100). Our DeepLOB reproduces the published paper to within 0.7--2.3 points.
   \item \textbf{Speed matters, but only relative to cost and signal decay.} On a synthetic book, both models lose about \$4 of profit per millisecond of latency, so DeepLOB's extra 2.3\,ms costs about \$10, while LightGBM's better signal is worth \$350: accuracy is worth 35 times more than inference speed there. The more accurate model also stays profitable up to $>$100\,ms, while DeepLOB's profit is gone by about 29\,ms. On BTC, the best signals earn 2.2\bp\ before costs and the most confident ones lose three times as much to a one-second delay, but a round trip costs 8\bp\ in fees alone, so no model can pay.
   \item \textbf{The fastest accurate model wins.} LightGBM compiled to C++ reproduces the Python model exactly and predicts in 10.5\,$\mu$s, 230--540 times faster than DeepLOB on a GPU, while being more accurate on BTC.
 \end{itemize}
@@ -795,6 +795,42 @@ LightGBM is significantly better than all four models, although its lead over Ra
 
 \fig{btc_confusion}{1.0}{Row-normalised confusion matrices on BTC (20\,s, pooled over segments). F = FLAT, U = UP, D = DOWN.}
 
+\subsection{Simpler models beat deep networks, even in accuracy}\label{sec:simple_vs_deep}
+
+A common expectation is that deep networks reading the raw book are more accurate than simpler models and pay for it only in speed. At the short horizons studied here the opposite holds: the simpler models are \emph{both} more accurate and far faster (Table~\ref{tab:simple_vs_deep}).
+
+\begin{table}[H]
+\centering\small
+\caption{Best simpler model against the deep networks on the same test rows}
+\label{tab:simple_vs_deep}
+\footnotesize\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}llcccl@{}}
+\toprule
+\textbf{Data, horizon} & \textbf{Metric} & \textbf{Simpler model} & \textbf{DeepLOB} & \textbf{LSTM / TLOB} & \textbf{Winner} \\
+\midrule
+BTC, 20\,s & Accuracy & \textbf{0.476} (LightGBM) & 0.429 & 0.448 / 0.455 & Simpler \\
+BTC, 20\,s & Macro-F1 & \textbf{0.467} (LightGBM) & 0.401 & 0.397 / 0.449 & Simpler \\
+Synthetic, 20 ev. & Macro-F1 & \textbf{0.584} (LightGBM) & 0.559 & 0.521 / 0.492 & Simpler \\
+FI-2010, $k=10$ & Accuracy (\%) & \textbf{86.1} (logistic + hist.) & 83.1 & -- & Simpler \\
+FI-2010, $k=20$ & Accuracy (\%) & \textbf{78.3} (logistic + hist.) & 74.1 & -- & Simpler \\
+FI-2010, $k=50$ & Accuracy (\%) & 66.5 (logistic + hist.) & \textbf{78.2} & -- & Deep \\
+FI-2010, $k=100$ & Accuracy (\%) & 75.7 (LightGBM + hist.) & \textbf{77.5} & -- & Deep \\
+\midrule
+\multicolumn{2}{@{}l}{Model size} & 327 trees (LightGBM) & 213{,}987 parameters & 62{,}675 / 88{,}795 & \\
+\multicolumn{2}{@{}l}{Training (per BTC segment)} & $\approx$9\,s, laptop CPU & $\approx$18\,min, A100 & & \\
+\multicolumn{2}{@{}l}{One prediction} & 10.5\,$\mu$s (C++) & 2.4--5.7\,ms (GPU) & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On BTC, LightGBM's lead over DeepLOB (+0.058 macro-F1) is significant on every segment (Table~\ref{tab:signif}), and DeepLOB and the LSTM score below even naive momentum. Three reasons explain the result:
+\begin{itemize}
+  \item \textbf{The signal is short-lived and concentrated at the top of the book.} The useful information is level-1 queues and the last few seconds of order flow, which a handful of hand-made features (imbalance, OFI and their lags) capture directly. DeepLOB's own attribution (Section~\ref{sec:drivers}) shows it learns to look at exactly the same things, but it has to discover them from 4{,}000 raw numbers per window.
+  \item \textbf{Deep models need more data and training than the signal-to-noise ratio supports.} With 1\,s BTC snapshots and a 20\,s horizon, a network with 214 thousand parameters is easy to overfit to noise; LightGBM with early stopping uses validation data to stop after about a hundred rounds.
+  \item \textbf{Seeing history matters more than the architecture.} On FI-2010, giving a linear model the same past 100 rows that DeepLOB sees closes and reverses the gap at short horizons.
+\end{itemize}
+Deep networks are not useless: on FI-2010 they win clearly at longer horizons ($k=50$--100), where more complex temporal patterns matter. The deep models also had limited tuning (8--15 epochs), so the gap could narrow with more search. The practical conclusion for short-horizon LOB prediction is to start with gradient-boosted trees on microstructure features: they were the most accurate models here, train in seconds, and predict in microseconds.
+
 \section{How fast does the signal decay?}
 
 \fig{signal_decay}{1.0}{Left: BTC skill against horizon. Right: on Nasdaq, the best learned model's macro-F1 minus naive momentum, for large-tick (solid) and small-tick (dashed) stocks.}
@@ -835,7 +871,7 @@ $k$ & \textbf{Naive flat} & \textbf{Logistic} & \textbf{Logistic + hist.} & \tex
   \item \textbf{LightGBM's poor $k=20$ result is distribution shift.} The test days are calmer (62\% FLAT vs 49\% in training). Validation accuracy is 86--88\% for every setting while test accuracy ranges from 55\% to 88\%, so validation data cannot detect the shift. Linear models degrade much less under it.
 \end{itemize}
 
-\section{What drives the predictions?}
+\section{What drives the predictions?}\label{sec:drivers}
 
 \fig{ablation_shap}{1.0}{Left: LightGBM macro-F1 as feature groups are added (BTC, 20\,s). Right: share of TreeSHAP and split-gain importance by feature group.}
 
@@ -1065,7 +1101,7 @@ This project used limit order book data, a much richer input than ordinary price
 \begin{itemize}
   \item \textbf{Data.} Six datasets (1.03 million BTC and ETH snapshots, every Nasdaq order event for five stocks, FI-2010, two regression datasets and a synthetic book) were converted to a common 40-column format, labelled with train-only thresholds and split chronologically with purging.
   \item \textbf{Prediction.} The book is significantly but modestly predictive. On BTC at 20\,s, LightGBM reaches macro-F1 0.467 (random 0.333, momentum 0.413) and beats every other model with bootstrap CIs excluding zero. On large-tick stocks the signal is stronger and peaks at 1--5\,s.
-  \item \textbf{Models.} Gradient-boosted trees on microstructure features match or beat deep sequence models at short horizons; DeepLOB, reproduced to within 2.3 points of the paper, wins at longer horizons on FI-2010. A one-parameter micro-price rule matches LightGBM on large-tick stocks.
+  \item \textbf{Models.} Simpler models beat deep networks at short horizons, in accuracy as well as speed: on BTC at 20\,s LightGBM is more accurate than DeepLOB (0.476 vs 0.429 accuracy, 0.467 vs 0.401 macro-F1), the LSTM and TLOB, and on FI-2010 logistic regression with book history beats DeepLOB at $k=10$--20. DeepLOB, reproduced to within 2.3 points of the paper, wins only at longer horizons on FI-2010. A one-parameter micro-price rule matches LightGBM on large-tick stocks.
   \item \textbf{What the models use.} The top of the book and its last few seconds of history, for both LightGBM (SHAP, ablation) and DeepLOB (gradient attribution).
   \item \textbf{Speed and profit.} Accuracy, speed and cost interact. On the synthetic book accuracy is worth 35 times more than inference speed, and a more accurate model tolerates more latency. Better signals decay faster, so they need faster execution. On BTC the 8\bp\ taker round trip exceeds the typical 4.3\bp\ move, so no model can profit; costs set the bar.
   \item \textbf{Engineering.} The trained LightGBM was compiled into C++ with identical output and 10.5\,$\mu$s median latency, 230--540 times faster than DeepLOB on a GPU.

@@ -11,3 +11,13 @@ report/build.sh                              # pdflatex twice
 ```
 
 Set the course name and guide at the top of `report.tex`.
+
+## Presentation
+
+`LOB_ML_Project_Presentation.pptx` (62 slides, speaker notes on every slide) is built from the same figures:
+
+```bash
+cd report/slides
+for f in ../figures/*.pdf; do pdftoppm -png -r 300 -singlefile "$f" "img/$(basename "$f" .pdf)"; done
+npm install && node build_deck.js
+```
