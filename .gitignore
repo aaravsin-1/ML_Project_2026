@@ -47,3 +47,6 @@ weights/*.pth
 
 # Raw LOBSTER sample archives
 /lobster/
+
+
+claude-desktop-rpm.sh

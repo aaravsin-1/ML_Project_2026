@@ -1,0 +1,11 @@
+make ppt
+
+[IMPORTANT] Fix the OFI / PCA features (src/microstructure/pipeline.py:118-136)
+  - ofi_l1 and mlofi_lvl_1 are the same column twice, so the "27 features" are really 26 distinct ones.
+    Drop one of them (and update any feature lists / ablation groups that name it).
+  - PCA is fit on all 10 OFI levels, but levels 1-5 are also passed in raw, so PCA1-3 overlap with them.
+    Decide: fit PCA on levels 6-10 only (true reduction of the deep book), or keep as is and say so.
+  - Only levels 6-10 are actually reduced (5 raw columns -> covered by 3 PCA components);
+    10 OFI values become 8 distinct columns, not 10 -> 3. Make the README / report wording match this.
+  - On BTC the 3 components keep ~60% of the variance (36% + 15% + 9%). Mention it if asked.
+  - After any change: rerun the affected experiments and update the numbers in README and the report.
