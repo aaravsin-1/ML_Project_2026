@@ -1,0 +1,52 @@
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 0 k=10 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 0 k=20 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 0 k=50 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 1 k=10 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 1 k=20 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 1 k=50 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 2 k=10 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 2 k=20 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 2 k=50 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 3 k=10 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 3 k=20 done
+/home/varaa/Documents/a_Coding/ML_Project_2026/.venv/lib64/python3.14/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+segment 3 k=50 done
+                               accuracy  ...    mcc
+horizon_s model                          ...       
+10        LightGBM                0.547  ...  0.316
+          Logistic Regression     0.512  ...  0.262
+          Naive Momentum          0.465  ...  0.192
+          Random Forest           0.539  ...  0.304
+20        LightGBM                0.476  ...  0.211
+          Logistic Regression     0.463  ...  0.187
+          Naive Momentum          0.415  ...  0.118
+          Random Forest           0.474  ...  0.207
+50        LightGBM                0.406  ...  0.106
+          Logistic Regression     0.401  ...  0.097
+          Naive Momentum          0.369  ...  0.050
+          Random Forest           0.407  ...  0.108
+
+[12 rows x 6 columns]

@@ -1,0 +1,18 @@
+\begin{table}[H]
+\centering\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\caption{BTC-USD, 20\,s horizon: threshold and probability metrics for the tabular models (mean over 4 segments, $\pm$ std). AUC (U/D) is UP vs DOWN on rows that moved.}
+\label{tab:btc_auc}
+\begin{tabular}{@{}lccccccccc@{}}
+\toprule
+\textbf{Model} & \textbf{Acc.} & \textbf{Bal. acc.} & \textbf{Macro-F1} & \textbf{MCC} & \textbf{$\kappa$} & \textbf{ROC-AUC (OvR)} & \textbf{AUC (U/D)} & \textbf{Log-loss} & \textbf{Brier} \\
+\midrule
+Naive Momentum & 0.415 & 0.413 & 0.413 $\pm$ 0.021 & 0.118 & 0.118 & 0.559 $\pm$ 0.016 & 0.571 & 1.440 & 0.879 \\
+Logistic Regression & 0.463 & 0.452 & 0.448 $\pm$ 0.016 & 0.187 & 0.186 & 0.641 $\pm$ 0.017 & 0.710 & 1.041 & 0.626 \\
+Random Forest & 0.474 & 0.467 & 0.465 $\pm$ 0.017 & 0.207 & 0.206 & 0.655 $\pm$ 0.019 & 0.717 & 1.029 & 0.619 \\
+\textbf{LightGBM} & 0.476 & 0.470 & 0.467 $\pm$ 0.021 & 0.211 & 0.209 & 0.658 $\pm$ 0.022 & 0.717 & 1.026 & 0.617 \\
+\midrule
+Uniform guess & 0.333 & 0.333 & 0.333 & 0 & 0 & 0.500 & 0.500 & 1.099 & 0.667 \\
+\bottomrule
+\end{tabular}
+\end{table}

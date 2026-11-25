@@ -1,0 +1,16 @@
+\begin{table}[H]
+\centering\small
+\caption{Macro-F1 and one-vs-rest ROC-AUC by horizon (BTC, mean of 4 segments)}
+\label{tab:btc_auc_h}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & \multicolumn{2}{c}{\textbf{Logistic regression}} & \multicolumn{2}{c}{\textbf{Random Forest}} & \multicolumn{2}{c}{\textbf{LightGBM}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+\textbf{Horizon} & Macro-F1 & AUC & Macro-F1 & AUC & Macro-F1 & AUC \\
+\midrule
+10\,s & 0.500 & 0.694 & 0.532 & 0.722 & 0.540 & 0.732 \\
+20\,s & 0.448 & 0.641 & 0.465 & 0.655 & 0.467 & 0.658 \\
+50\,s & 0.382 & 0.578 & 0.396 & 0.585 & 0.395 & 0.584 \\
+\bottomrule
+\end{tabular}
+\end{table}
