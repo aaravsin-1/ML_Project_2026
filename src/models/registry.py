@@ -58,13 +58,15 @@ class DeepLearningTrainer:
         learning_rate: float = 0.0005,
         weight_decay: float = 1e-4,
         device: Optional[str] = None,
-        class_weights: Optional[np.ndarray] = None
+        class_weights: Optional[np.ndarray] = None,
+        use_amp: bool = False,
     ):
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
-            
+
+        self.use_amp = bool(use_amp and self.device.type == "cuda")
         self.model = model.to(self.device)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', factor=0.5, patience=2)
@@ -79,12 +81,13 @@ class DeepLearningTrainer:
         n_batches = 0
 
         for x, y in dataloader:
-            x = x.to(self.device)
-            y = y.to(self.device)
+            x = x.to(self.device, non_blocking=True)
+            y = y.to(self.device, non_blocking=True)
 
-            self.optimizer.zero_grad()
-            logits = self.model(x)
-            loss = self.criterion(logits, y)
+            self.optimizer.zero_grad(set_to_none=True)
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                logits = self.model(x)
+                loss = self.criterion(logits, y)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.optimizer.step()
@@ -109,12 +112,13 @@ class DeepLearningTrainer:
 
         with torch.no_grad():
             for x, y in dataloader:
-                x = x.to(self.device)
-                y = y.to(self.device)
+                x = x.to(self.device, non_blocking=True)
+                y = y.to(self.device, non_blocking=True)
 
-                logits = self.model(x)
-                loss = self.criterion(logits, y)
-                probs = torch.softmax(logits, dim=-1)
+                with torch.amp.autocast("cuda", dtype=torch.bfloat16, enabled=self.use_amp):
+                    logits = self.model(x)
+                    loss = self.criterion(logits, y)
+                probs = torch.softmax(logits.float(), dim=-1)
                 preds = torch.argmax(probs, dim=-1)
 
                 total_loss += loss.item()
