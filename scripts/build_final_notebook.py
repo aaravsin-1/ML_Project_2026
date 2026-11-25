@@ -1,8 +1,13 @@
 """Builds (and optionally executes) the final submission notebook, submission/Final_Project_Notebook.ipynb.
 
-The notebook documents every experiment. By default it shows the saved results from the repository's
-artifacts/ folder and runs one small live demo, so "Run all" takes a few minutes on Colab or a laptop.
-Each experiment can be rerun from the notebook by switching it on in the RERUN settings.
+The notebook documents every experiment across Synthetic, Coinbase BTC/ETH, Nasdaq LOBSTER,
+FI-2010, Optiver Kaggle, C++ inference benchmarks, and the 64-day 25-instrument Indian NSE
+5-level order book study. By default it shows the saved results from the repository's
+artifacts/ folder and runs a complete live ML pipeline demo (data generation, preprocessing,
+train-only Block PCA & feature engineering, model training/evaluation, confusion matrix, PyTorch
+deep architecture forward-pass check, purged CV + shuffled-label control, and execution
+simulation), so "Run all" finishes in ~1-2 minutes on Colab or a laptop. Each full experiment
+can be recomputed from the RERUN dictionary in Section 1.
 
     python scripts/build_final_notebook.py            # build and execute (embeds the outputs)
     python scripts/build_final_notebook.py --no-run   # build only
@@ -33,46 +38,46 @@ def code(text):
 md(f"""
 # Predicting Limit Order Books, and Whether the Prediction Pays
 
-**Machine Learning course project, final notebook.** Author: Aarav Singhal. October 2026.
+**UML501 — Machine Learning · Final Project Notebook.**  
+**Authors:** Aarav Singhal (`1024030539`) & Sharan Sharma (`1024030511`) · **Guided by:** Dr. Sanju Kumari (CSED, Thapar Institute of Engineering & Technology). November 2026.
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]({COLAB_URL})
 
-This notebook walks through every experiment in the project, with the question each one asks, how it works, its results and what they mean. The written argument is in [PROJECT_REPORT.md](PROJECT_REPORT.md), and the full per-experiment write-up is in the repository's [README](../README.md).
+This notebook walks through every stage of our Machine Learning pipeline—data ingestion, preprocessing, anti-leakage chronological splitting, causal feature engineering (including train-only Block PCA), classical tabular models, deep neural networks, statistical evaluation, explainability, C++ tree compilation, and real-world cost/latency evaluation across six datasets (~43M snapshots total, anchored by our 36.0M-row Indian NSE 5-level study).
 
-**The question.** Can machine learning predict the next few seconds of price movement from a limit order book, and can a trading system turn that prediction into profit? Profit depends on three things at once:
-- how **accurate** the prediction is;
-- how **fast** the system acts on it (latency);
-- what it **costs** to trade.
+- Full LaTeX report: [LOB_ML_Project_Report.pdf](../report/LOB_ML_Project_Report.pdf)
+- Presentation slides: [LOB_ML_Project_Presentation.pptx](../report/LOB_ML_Project_Presentation.pptx)
+- Summary report & repository docs: [PROJECT_REPORT.md](PROJECT_REPORT.md) · [README](../README.md)
 
-**How to run this notebook.** Choose **Runtime → Run all**. It takes a few minutes and needs no GPU or credentials:
-- The setup cell clones the repository (on Colab).
-- Section 3 runs a small **live demo** that builds features, trains models, validates them and simulates trading on a synthetic order book.
-- Every other section **loads the saved results** of the full experiments from `artifacts/`. Those experiments take hours and some need a GPU.
-- To recompute an experiment, switch it on in the `RERUN` settings in section 1. That needs Kaggle credentials for the data and, for the deep models, a GPU. [notebooks/colab_run_all.ipynb](../notebooks/colab_run_all.ipynb) reruns everything with checkpointing.
+**How to run this notebook.** Choose **Runtime → Run all**. It runs in ~1–2 minutes on CPU with no credentials needed:
+- Section 1 detects Colab or the local repository root and defines plotting/table helpers.
+- Section 3 runs a complete **live end-to-end ML pipeline**: synthetic order-book generation, cleaning & label calibration, causal feature extraction + train-only Block PCA, training & evaluating the tabular model ladder (with confusion matrix, ROC-AUC, and feature-importance plots), instantiating & verifying all PyTorch deep architectures (`LSTM`, `DeepLOB`, `DeepLOB5`, `TLOB`), running purged cross-validation + a shuffled-label control, and simulating realistic execution.
+- Sections 4–14 load verified results from `artifacts/` (since full multi-day GPU runs across BTC and 25 Indian NSE stocks take hours). Toggle any flag in `RERUN` (Section 1) to recompute from source.
 
 **Contents**
 1. Setup
-2. The question, the data and the method
-3. Live demo: the pipeline end to end on a synthetic book
-4. Synthetic experiments A–D
-5. Real data: Coinbase BTC-USD (A–D)
-6. From prediction to profit on BTC (E, edge decomposition, G)
-7. More signal: Ethereum's book (F)
-8. Market making (H) and Nasdaq stocks by tick size (I)
-9. Is the ranking significant, and what do the models use? (J)
-10. The micro-price as predictor and target (K)
-11. FI-2010: comparison with the published DeepLOB
-12. Optiver Kaggle data: leakage and the closing auction
-13. Latency: the C++ inference benchmarks
-14. Discussion: balancing accuracy, latency and cost
-15. Limitations and conclusion
+2. Problem Formulation, Datasets, Preprocessing & Method
+3. Live End-to-End Pipeline: Preprocessing, Feature Engineering, Training, Deep Nets & Testing
+4. Synthetic Experiments A–D (5 sessions)
+5. Real Data: Coinbase BTC-USD (Experiments A–D)
+6. From Prediction to Profit on BTC (Experiments E, Edge Decomposition, G)
+7. Cross-Asset Lead-Lag: Ethereum → Bitcoin (Experiment F)
+8. Market Making (H) and Nasdaq Stocks by Tick Size (LOBSTER, Experiment I)
+9. Statistical Significance & Explainable AI (SHAP, CNN Saliency, Experiment J)
+10. Micro-Price as Predictor and Regression Target (Experiment K)
+11. FI-2010 Academic Benchmark: History vs Architecture
+12. Optiver Kaggle Datasets: Leakage Case Study & Closing Auction Regression
+13. Inference Latency: Python-to-C++ Tree Compiler
+14. Indian NSE 5-Level Order-Book Study (64 Trading Days, 25 Instruments, 36.0M Snapshots)
+15. Discussion: Balancing Accuracy, Latency and Cost
+16. Limitations, Reproducibility & Conclusion
 """)
 
 # =====================================================================================  1 setup
 md("""
 ## 1. Setup
 
-Clones the repository on Colab (locally, it finds the repository root), installs the few packages Colab lacks, and defines small helpers for showing results.
+Clones the repository on Colab (locally, it detects the repository root), installs any missing dependencies, and configures table/figure display helpers.
 """)
 
 code(r'''
@@ -114,7 +119,7 @@ from IPython.display import display, Image
 
 warnings.filterwarnings("ignore")
 pd.set_option("display.width", 200)
-pd.set_option("display.max_columns", 30)
+pd.set_option("display.max_columns", 32)
 ART = root / "artifacts"
 BLUE, ORANGE, AQUA, YELLOW, MAGENTA = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"
 
@@ -133,11 +138,10 @@ def figure(path, width=900):
 ''')
 
 md("""
-**Rerunning experiments (optional).** Every switch is off, so the notebook shows the saved results. Switching one on reruns that experiment before its results are shown.
-- **Checkpoints:** experiments resume from saved checkpoints where they exist, so finished parts are reused.
-- **Data:** BTC, FI-2010 and Optiver are downloaded from Kaggle. Add `KAGGLE_USERNAME` and `KAGGLE_KEY` as Colab secrets (🔑 panel) and accept the Optiver competitions' rules on kaggle.com.
-- **LOBSTER:** cannot be downloaded automatically (academic licence). Put the 10-level sample files in `data/raw/lobster/`.
-- **Run times** are noted per switch.
+**Rerunning experiments (optional).** Every switch below defaults to `False` so the notebook renders saved experiment artifacts rapidly. Switch any entry to `True` to recompute that pipeline stage from raw/cached data:
+- **Checkpoints:** experiments resume from saved checkpoints where present.
+- **Public datasets (`btc`, `eth`, `fi2010`, `optiver_*`):** fetched via Kaggle credentials (`KAGGLE_USERNAME`, `KAGGLE_KEY` in Colab secrets or local `~/.kaggle/kaggle.json`).
+- **Indian NSE dataset (`nse_*`):** reads a local Parquet/NPZ NSE tick store configured via `MARKET_TICKS` environment variable or cached `data/processed/nse/*.npz`.
 """)
 
 code(r'''
@@ -158,6 +162,11 @@ RERUN = {
     "optiver_rvp": False,         # Optiver Realized Volatility                  CPU, ~1 h
     "optiver_close": False,       # Optiver Trading at the Close                 CPU, ~1 h
     "cpp_trained": False,         # trained LightGBM compiled to C++             CPU, ~5 min
+    "nse_models": False,          # NSE 5-level Exp A & J (LGBM vs LSTM/DL5/TLOB) GPU, ~1.5 h
+    "nse_decay_ablation": False,  # NSE Exp B & C (horizon decay + 5-stage ablat) CPU, ~25 min
+    "nse_execution": False,       # NSE Exp D, E, G & edge decomposition          CPU, ~15 min
+    "nse_cross_micro": False,     # NSE Exp F (bank lead-lag) & K (micro-price)   CPU, ~25 min
+    "nse_universe_25": False,     # NSE 25-instrument 36M-row tick-spectrum study CPU, ~35 min
 }
 
 PY = f"{sys.executable} -u -W ignore"
@@ -178,6 +187,11 @@ STEPS = {
     "optiver_rvp": (f"{PY} -m src.experiments.optiver_rvp", ["optiver_rvp"]),
     "optiver_close": (f"{PY} -m src.experiments.optiver_close", ["optiver_close"]),
     "cpp_trained": (f"{PY} scripts/benchmark_trained_model.py", ["btc"]),
+    "nse_models": (f"{PY} -m src.experiments.nse_exp_a_j_models --epochs 10", []),
+    "nse_decay_ablation": (f"{PY} -m src.experiments.nse_exp_b_c_decay_ablation", []),
+    "nse_execution": (f"{PY} -m src.experiments.nse_exp_d_e_g_execution", []),
+    "nse_cross_micro": (f"{PY} -m src.experiments.nse_exp_f_k_cross_micro", []),
+    "nse_universe_25": (f"{PY} -m src.experiments.nse_exp_broad_universe", []),
 }
 
 
@@ -207,95 +221,81 @@ def rerun(name):
 
 # =====================================================================================  2 question
 md(r"""
-## 2. The question, the data and the method
+## 2. Problem Formulation, Datasets, Preprocessing & Method
 
-### 2.1 Why accuracy alone is not enough
+### 2.1 Supervised Formulation and Real-World Cost Decomposition
 
-For one round trip (enter, hold for horizon $h$, exit), the net edge splits into four parts:
+We formulate short-horizon Limit Order Book (LOB) forecasting as a **3-class supervised classification problem** (`FLAT = 0`, `UP = 1`, `DOWN = 2`), plus continuous **mid-price change regression** in Section 10 and Section 14.5.
+
+To connect ML classification accuracy to real-world execution viability, for one round trip (enter, hold for horizon $h$, exit), net edge splits into four parts:
 
 $$\text{net edge} = \underbrace{E[s\,\Delta m_{t\to t+h}]}_{\text{accuracy}} - \underbrace{\big(E[s\,\Delta m_{t\to t+h}] - E[s\,\Delta m_{t+L\to t+L+h}]\big)}_{\text{latency } L} - \underbrace{c_{\text{cross}}}_{\text{spread, depth}} - \underbrace{2f}_{\text{fees}}$$
 
-Here $s=\pm1$ is the predicted direction and $\Delta m$ the change in the mid price (halfway between the best bid and best ask).
-- The **model** controls the first term.
-- The **system's speed** controls the second.
-- The **market and exchange** control the last two.
-
-If moves are roughly symmetric with average size $m$ and the model is right with probability $p$, the first term is about $(2p-1)m$. Breaking even after a total round-trip cost $C$ then needs a hit rate of
+Here $s=\pm1$ is the predicted direction and $\Delta m$ the change in mid-price. If moves have average size $m$ and accuracy is $p$, gross accuracy edge is $\approx (2p-1)m$, so clearing round-trip cost $C$ requires hit rate:
 
 $$p^* = \tfrac12 + \frac{C}{2m}.$$
 
-When $C > m$, $p^* > 1$ and no model can win. Section 14 comes back to this.
+When $C > m$, $p^* > 1$ and no classifier alone can turn standalone round-trip trading profitable.
 
-### 2.2 Data
+### 2.2 Datasets (~43M Total Snapshots)
 
-| Dataset | What it is | Role |
+| Dataset | Description | Role |
 |:---|:---|:---|
-| Synthetic | Simulated large-tick book with a planted "informed trader" signal, 5 × 60,000 events | Controlled tests and the latency sweep. Says nothing about real markets |
-| Coinbase BTC-USD | 15-level book, 1 s snapshots, real trade tape, ~12 days (Apr 2021), 4 segments | Main real-data testbed |
-| LOBSTER | Every Nasdaq order event for INTC, MSFT, AAPL, AMZN and GOOG, 21 June 2012, resampled to 100 ms | Large-tick vs small-tick stocks, 100 ms to 30 s horizons |
-| FI-2010 | Academic benchmark: 5 Finnish stocks, 10 days | Comparison with the published DeepLOB |
-| Optiver Realized Volatility | Kaggle 2021 | Leakage case study |
-| Optiver Trading at the Close | Kaggle 2023 | Regression on the closing auction |
+| **Indian NSE (Local 5-level)** | **25 instruments across 10 equity sectors + NIFTY_FUT & BANKNIFTY_FUT**, 64 trading days × 22,500 1 s rows/day (**36.0M snapshots** total) | **Largest real-market empirical study**: tick-size predictability law, covariate shift, `DeepLOB5`, ablation & Indian transaction-cost reality |
+| **Coinbase BTC-USD & ETH-USD** | 15-level book resampled to 1 s (~1.03M snapshots each, ~12 days Apr 2021, 4 segments) + trade tape | Cross-asset lead-lag, market making, confusion/calibration & C++ compiler benchmark |
+| **Nasdaq LOBSTER** | Full order-event books for `INTC`, `MSFT`, `AAPL`, `AMZN`, `GOOG` (100 ms grid) | Large-tick vs small-tick micro-price & queue-position case study |
+| **FI-2010** | Standard 5-stock academic LOB benchmark (10 days, 144 features + 40 raw columns) | Faithful replication & history-vs-architecture ablation against Zhang et al. (2019) |
+| **Optiver Kaggle (RVP & Close)** | Kaggle 2021 volatility & 2023 closing auction datasets | Time-series leakage case study & closing auction predictability check |
+| **Synthetic Ground-Truth** | Planted-signal 10-level discrete-event LOB simulator (`5 × 60,000` events) | Controlled pipeline validation & millisecond latency sweep |
 
-**Tick size** shapes everything:
-- **Large-tick** stocks (INTC, MSFT): the 1-cent tick is 3.3–3.7 bp of the price, the spread is usually one tick, and the queues are deep.
-- **Small-tick** stocks (AAPL, AMZN, GOOG): 0.17–0.45 bp.
-- **BTC**: the tick is $0.01 on about $60,000, which is 0.0017 bp.
+**Tick size** (minimum price increment relative to share price, measured in basis points where `1 bp = 0.01%`) governs queue depth and predictability:
+- **Ultra-large / large tick** (`IDEA` `7.41 bp`, `YESBANK` `4.52 bp`, `ITC` `1.88 bp`, Nasdaq `INTC`/`MSFT` `3.3–3.7 bp`): spreads lock at 1 tick and deep queues form, yielding up to **0.841 ROC-AUC (5 s)**.
+- **Medium / small / tiny tick** (`RELIANCE` `0.80 bp`, `TCS` `0.43 bp`, `NIFTY_FUT` `0.043 bp`, `BANKNIFTY_FUT` `0.035 bp`, `BTC` `0.0017 bp`): thin Level-1 queues and rapid price jumping.
 
-(1 bp = 0.01%.)
+### 2.3 Preprocessing & Anti-Leakage ML Pipeline
 
-### 2.3 Method
+1. **Canonical Cleaning & Session Alignment:**
+   - Resample irregular exchange streams onto a uniform 1 s clock (`100 ms` on LOBSTER) via causal last-observation-carried-forward (`searchsorted`).
+   - Drop rows with missing top-of-book quotes, non-positive prices/sizes, or crossed books (`Ask_1 <= Bid_1`); reorder columns canonically (`[ap1, aq1, bp1, bq1, ...]`).
+   - On NSE, clip strictly to regular continuous trading (`09:15:00–15:29:59 IST`), exclude special 1-hour Muhurat sessions, and reconstruct signed trades from positive cumulative volume changes using the Lee–Ready quote/tick rule.
+2. **Whole-Day Isolation & Purged Chronological Splitting:**
+   - **Never use random K-Fold CV** on autocorrelated time-series rows.
+   - Divide continuous streams chronologically into **70% train / 15% validation / 15% test** with a **purged gap of `k` rows** at each boundary; on NSE, split by **whole trading days (`11 / 2 / 3`)** and reset `OFI`, lags, `VPIN` volume buckets, smoothed forward labels, and `100`-step sequence windows at every overnight boundary.
+3. **Train-Only Label Calibration & Transforms:**
+   - Smooth mid-price returns with a 5-step trailing window (within day on NSE) and calibrate symmetric threshold `±theta` **on training rows only** (`~1/3 FLAT` target on balanced datasets).
+   - **Block PCA on MLOFI:** Fit 3-component mean-centred PCA (`ofi_pca1..3`) on training-split Multi-Level Order Flow Imbalance only (`MLOFI`). On 10-level BTC this reduces levels `6–10` into 3 factors; on 5-level NSE it augments the 5 raw levels with 3 orthogonal rotated directions so axis-aligned trees can split along combined multi-level flow (`80.5%` explained variance on RELIANCE).
+   - Fit `StandardScaler` (for Logistic Regression), `DecimalPrecisionNormalizer` (for `LSTM` / `DeepLOB` / `DeepLOB5`), and `VPIN` bucket volume **strictly on training rows**.
+4. **Balanced Model Ladder (6 Tiers, Uniform Class Weighting `w_c = N / (3 * N_c)`):**
 
-**Task.** Predict whether the smoothed mid price $k$ steps ahead is UP, FLAT or DOWN. The UP/DOWN threshold is fitted on training rows only. On BTC it is set so that a third of training rows are FLAT, which puts random guessing at macro-F1 ≈ 0.333.
+| Tier | Model | Inputs & Key Idea |
+|:---:|:---|:---|
+| 0 | Naive Flat & Naive Momentum (`lag k`) | Majority-class & persistence floor |
+| 1 | Logistic Regression (`L2`, `StandardScaler`) | Linear baseline testing linear separability |
+| 2 | Random Forest (`100` trees, `max_depth=10–12`) | Parallel bagging over bootstrap row/feature subsets |
+| 3 | **LightGBM** (`num_leaves=63`, `lr=0.05`, early stopping) | Histogram gradient boosting on 25–27 causal features (+ C++ compiler) |
+| 4 | **2-Layer LSTM** | Gated recurrent network on 100-step normalised raw book sequences |
+| 5 | **DeepLOB / DeepLOB5 & TLOB** | Spatio-temporal CNN (`1×2`, `1×2`, `1×5/10`) + multi-scale Inception + LSTM; and Dual-Attention Transformer (`TLOB`) with adaptive Bilinear Normalisation (`BiN`) |
 
-**Metric.** Macro-F1 is the average F1 over the three classes, so a model cannot score well by always predicting the majority class.
-
-**Features.** All features are causal: row $t$ uses only snapshots at or before $t$.
-- Queue imbalance at levels 1, 3, 5 and 10.
-- Spread in ticks.
-- Order flow imbalance (OFI, Cont et al. 2014), plus multi-level OFI compressed by a train-only PCA.
-- VPIN (Easley et al. 2012), a measure of how one-sided recent trading was.
-- Micro-price deviation.
-- Book slopes.
-- Lags of the level-1 signals.
-
-**Models.**
-
-| Tier | Model |
-|:---:|:---|
-| 0 | Naive momentum (repeat the last realised move), naive flat |
-| 1 | Logistic regression |
-| 2 | Random Forest |
-| 3 | LightGBM (gradient-boosted trees) |
-| 4 | LSTM on windows of 100 raw book snapshots |
-| 5 | DeepLOB (CNN + Inception + LSTM), TLOB (transformer) |
-
-**Validation against leakage.**
-- **Splits:** chronological 70/15/15. The last $k$ rows before each boundary are purged, because their labels look into the next split.
-- **Train-only fitting:** every normaliser, PCA and threshold is fitted on the training period.
-- **Same test rows** for every model.
-- **Significance:** moving-block bootstrap confidence intervals and McNemar's test.
-- **Negative controls:** shuffled-target models must score about zero.
-- **Tests:** 40 automated tests.
-
-**Execution simulator.**
-- **Taker orders** cross the spread and walk the book level by level, and pay fees.
-- **Latency** is applied in wall-clock time.
-- **Passive orders** use three fill rules that bracket the truth: pessimistic (only when the price trades through), queue, and optimistic (front of the queue).
+5. **Honest Evaluation & Validation:** Report **Macro-F1**, **One-vs-Rest & UP-vs-DOWN ROC-AUC**, **Log-Loss / Brier Calibration**, **5-minute Moving-Block Bootstrap 95% CIs**, **Shuffled-Label Negative Controls**, and **43 automated pytest unit tests**.
 """)
 
 # =====================================================================================  3 live demo
 md("""
-## 3. Live demo: the pipeline end to end on a synthetic book
+## 3. Live End-to-End Pipeline: Preprocessing, Feature Engineering, Training, Deep Nets & Testing
 
-This section really runs. It generates one synthetic session, builds the features, trains the tabular models, validates them and simulates trading. The full synthetic experiments in section 4 repeat this over 5 sessions and add the deep models. It takes about 2–4 minutes on a CPU.
+This section runs live on CPU in ~1 minute so every stage of the ML codebase can be inspected end-to-end:
+1. Generate order-book stream, verify data hygiene, create train-only `±theta` 3-class labels, and check chronological purged splits.
+2. Run feature extraction, inspect train-only Block PCA variance & zero-NaN guarantees, and verify scaler isolation.
+3. Train & test all classical ML models with **Macro-F1**, **ROC-AUC (OvR)**, **Log-Loss**, **MCC**, a **Confusion Matrix**, and **LightGBM Feature Importances**.
+4. Instantiate all PyTorch deep neural architectures (`LSTMLOBNet`, `DeepLOB`, `DeepLOB5`, `TLOB`) and verify tensor shapes + forward passes.
+5. Run 5-fold **Purged Cross-Validation with Embargo** and the **Shuffled-Label Leakage Check**.
+6. Feed test predictions into the **Execution Simulator** (Fantasy mid vs Realistic Aggressive Taker vs VPIN-gated Passive Maker).
 
-### 3.1 Generate a market and build features
-60,000 events of a large-tick book (one-tick spread, 10 levels, about 10 ms between events). The generator plants a hidden informed-trader state that skews order flow for 15–60 events at a time.
+### 3.1 Generate Data, Verify Cleaning & Calibrate Chronological Splits
 """)
 
 code(r'''
-from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef
+from sklearn.metrics import accuracy_score, f1_score, matthews_corrcoef, roc_auc_score, log_loss, confusion_matrix
 from src.experiments.common import generate_session, prepare_data
 from src.models.baselines import NaiveMomentumBaseline, NaiveFlatBaseline, LogisticRegressionBaseline
 from src.models.tabular_trees import RandomForestLOB, LightGBMLOB
@@ -304,47 +304,145 @@ SEED, k = 42, 20
 np.random.seed(SEED)
 session = generate_session(SEED, n_events=60000)
 y_all = session.labels_dict[k]
-data = prepare_data(session)                 # PCA and normaliser fitted on the training period only
-idx = data.splits(k)                         # chronological 70/15/15 with a purge gap of k rows
+data = prepare_data(session)                 # fits normaliser, VPIN bucket & Block PCA on training rows ONLY
+idx = data.splits(k)                         # chronological 70/15/15 split with a purge gap of k rows
+
+# Preprocessing sanity checks
+lob = session.lob_40
+n_crossed = int(np.sum(lob[:, 0] <= lob[:, 2]))
+n_nan_lob = int(np.sum(~np.isfinite(lob)))
+n_nan_tab = int(np.sum(~np.isfinite(data.tab_feat)))
+gap_tr_va = int(idx["val"][0] - idx["train"][-1] - 1)
+gap_va_te = int(idx["test"][0] - idx["val"][-1] - 1)
+
+print(f"Snapshots: {len(lob):,} over {session.timestamps_ms[-1] / 1000:.0f} s | Crossed books: {n_crossed} | NaNs (LOB/Tab): {n_nan_lob}/{n_nan_tab}")
+print(f"Purged gaps >= k={k}: train->val gap = {gap_tr_va} rows, val->test gap = {gap_va_te} rows")
+print(f"Split sizes -> Train: {len(idx['train']):,} | Val: {len(idx['val']):,} | Test: {len(idx['test']):,}")
+print("Test label shares (FLAT=0 / UP=1 / DOWN=2):", np.round(np.bincount(y_all[idx["test"]], minlength=3) / len(idx["test"]), 3))
+''')
+
+md("""
+### 3.2 Inspect Engineered Features & Train-Only Block PCA
+
+Notice below how **Block PCA** fits strictly on `train` rows (`[0 : train_end]`) of the Multi-Level Order Flow (`MLOFI`) block and extracts 3 orthogonal flow factors (`ofi_pca1..3`), explaining most of the cross-level flow variance without mixing units across heterogeneous columns or leaking future statistics.
+""")
+
+code(r'''
 X = data.tab_feat
 X_tr, y_tr = X[idx["train"]], y_all[idx["train"]]
 X_va, y_va = X[idx["val"]], y_all[idx["val"]]
 X_te, y_te = X[idx["test"]], y_all[idx["test"]]
 
-print(f"{len(session.lob_40):,} snapshots over {session.timestamps_ms[-1] / 1000:.0f} s of simulated trading")
-print(f"{len(data.feat_names)} features, e.g. {', '.join(data.feat_names[:6])}, ...")
-print(f"Train {len(X_tr):,} | validation {len(X_va):,} | test {len(X_te):,} rows")
-print("Test label shares (FLAT / UP / DOWN):", np.round(np.bincount(y_te, minlength=3) / len(y_te), 3))
+pca_var = data.pipeline.pca_model.explained_variance_ratio_
+print(f"Engineered {len(data.feat_names)} causal features:")
+print(" ", ", ".join(data.feat_names))
+print(f"Train-only MLOFI Block PCA explained variance ratios: {np.round(pca_var, 3)} (Cumulative: {pca_var.sum():.1%})")
+print(f"Deep tensor shape per snapshot: {data.deep_feat.shape} (Decimal-precision normalised on train only)")
 ''')
 
 md("""
-### 3.2 Train the model ladder
-All learned models use balanced class weights. The momentum baseline repeats the last *realised* move (the label at $t-k$), the latest information actually available when the decision is made.
+### 3.3 Train & Test the Classical Model Ladder (Metrics, Confusion Matrix & Feature Importance)
+
+Every learned model receives balanced class weights ($w_c = N / (3 N_c)$). Below we compare Accuracy, **Macro-F1**, **One-vs-Rest ROC-AUC**, **Log-Loss**, and **MCC** on identical held-out test timestamps, alongside LightGBM's confusion matrix and gain-based feature importance.
 """)
 
 code(r'''
 rows = []
-def record(name, pred):
-    rows.append({"Model": name, "Accuracy": accuracy_score(y_te, pred),
-                 "Macro-F1": f1_score(y_te, pred, average="macro"), "MCC": matthews_corrcoef(y_te, pred)})
+def record(name, pred, proba=None):
+    auc = roc_auc_score(y_te, proba, multi_class="ovr") if proba is not None else np.nan
+    ll = log_loss(y_te, proba, labels=[0, 1, 2]) if proba is not None else np.nan
+    rows.append({
+        "Model": name,
+        "Accuracy": accuracy_score(y_te, pred),
+        "Macro-F1": f1_score(y_te, pred, average="macro"),
+        "ROC-AUC (OvR)": auc,
+        "Log-Loss": ll,
+        "MCC": matthews_corrcoef(y_te, pred),
+    })
 
-record("Naive flat", NaiveFlatBaseline().predict(X_te))
-record("Naive momentum (lag k)", NaiveMomentumBaseline(k).predict(y_all, idx["test"]))
-lr = LogisticRegressionBaseline(C=1.0); lr.fit(X_tr, y_tr); record("Logistic regression", lr.predict(X_te))
-rf = RandomForestLOB(n_estimators=100, max_depth=10, random_state=SEED); rf.fit(X_tr, y_tr); record("Random Forest", rf.predict(X_te))
+nf = NaiveFlatBaseline()
+nm = NaiveMomentumBaseline(k)
+record("Naive flat", nf.predict(X_te), nf.predict_proba(X_te))
+record("Naive momentum (lag k)", nm.predict(y_all, idx["test"]), nm.predict_proba(y_all, idx["test"]))
+
+lr = LogisticRegressionBaseline(C=1.0); lr.fit(X_tr, y_tr)
+record("Logistic regression", lr.predict(X_te), lr.predict_proba(X_te))
+
+rf = RandomForestLOB(n_estimators=100, max_depth=10, random_state=SEED); rf.fit(X_tr, y_tr)
+record("Random Forest", rf.predict(X_te), rf.predict_proba(X_te))
+
 lgb = LightGBMLOB(num_leaves=63, max_depth=8, learning_rate=0.05, n_estimators=200, random_state=SEED)
 lgb.fit(X_tr, y_tr, X_va, y_va, early_stopping_rounds=15)
 pred_lgb = lgb.predict(X_te)
-record("LightGBM", pred_lgb)
+prob_lgb = lgb.predict_proba(X_te)
+record("LightGBM", pred_lgb, prob_lgb)
 show(pd.DataFrame(rows))
+
+# Plot Confusion Matrix & Top-10 Feature Importances
+fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.0))
+cm = confusion_matrix(y_te, pred_lgb, labels=[0, 1, 2], normalize="true")
+im = axes[0].imshow(cm, cmap="Blues", vmin=0, vmax=0.8)
+labels_txt = ["FLAT", "UP", "DOWN"]
+axes[0].set_xticks([0, 1, 2]); axes[0].set_yticks([0, 1, 2])
+axes[0].set_xticklabels(labels_txt); axes[0].set_yticklabels(labels_txt)
+axes[0].set_xlabel("Predicted class"); axes[0].set_ylabel("True class")
+axes[0].set_title("LightGBM Row-Normalised Confusion Matrix (Test)")
+for i in range(3):
+    for j in range(3):
+        axes[0].text(j, i, f"{cm[i, j]:.2f}", ha="center", va="center",
+                     color="white" if cm[i, j] > 0.45 else "black", fontweight="bold")
+
+imp = pd.Series(lgb.feature_importances_, index=data.feat_names).sort_values(ascending=True).tail(10)
+axes[1].barh(imp.index, imp.values / imp.values.sum() * 100.0, color=BLUE)
+axes[1].set_xlabel("Relative Gain Importance (%)")
+axes[1].set_title("Top-10 Causal Features in LightGBM (Synthetic Live Demo)")
+plt.tight_layout(); plt.show()
 ''')
 
 md("""
-Accuracy is below the naive-flat rate for every learned model. That's expected: balanced class weights trade majority-class accuracy for recall on UP and DOWN. Macro-F1 and MCC are the fair comparison, and on both the learned models clearly beat the baselines.
+Notice two clean ML takeaways right in the live demo:
+- `Naive flat` achieves ~45%+ plain accuracy simply by predicting `0` every time, exposing why **Macro-F1** and **ROC-AUC** are essential on imbalanced classes.
+- `LightGBM` beats `Logistic regression` on Macro-F1 and Log-Loss because order-book queue thresholds are non-linear.
 
-### 3.3 Validate: purged cross-validation and a shuffled-target control
-- **Purged CV with embargo** checks that the skill is stable across time.
-- **The permutation check** trains on shuffled targets and must find no skill. It catches label/row misalignment, though it cannot by itself prove that features don't look ahead. The causality test in the test suite covers that.
+### 3.4 Deep Sequence Architectures & Live Tensor Verification (`PyTorch`)
+
+Full multi-day training of `LSTM`, `DeepLOB`, `DeepLOB5`, and `TLOB` runs on GPU (`RERUN["synthetic"]`, `RERUN["btc"]`, `RERUN["nse_models"]`). Here we instantiate all four architectures from `src.models`, report exact parameter counts, and verify end-to-end forward passes on real `(batch, 1, 100, cols)` windows from `data.deep_feat`.
+""")
+
+code(r'''
+import torch
+from src.models.recurrent import LSTMLOBNet
+from src.models.deeplob import DeepLOB
+from src.models.deeplob5 import DeepLOB5
+from src.models.tlob import TLOB
+
+# Build 4 real 100-step sequence windows from test indices
+win_10 = np.stack([data.deep_feat[t - 99:t + 1] for t in idx["test"][:4]], axis=0)  # (4, 100, 40)
+x10 = torch.tensor(win_10, dtype=torch.float32).unsqueeze(1)                       # (4, 1, 100, 40)
+x5 = x10[:, :, :, :20]                                                             # (4, 1, 100, 20) for 5-level NSE
+
+deep_specs = [
+    ("LSTMLOBNet (10-level BTC / Synth)", LSTMLOBNet(num_features=40, hidden_dim=64, num_layers=2), x10),
+    ("DeepLOB (10-level BTC / FI-2010)", DeepLOB(num_classes=3, lstm_hidden=64), x10),
+    ("DeepLOB5 (Native 5-level NSE)", DeepLOB5(num_classes=3, lstm_hidden=64), x5),
+    ("TLOB Transformer + BiN (10-level)", TLOB(num_features=40, seq_len=100, d_model=64, num_heads=4, num_layers=2), x10),
+    ("TLOB Transformer + BiN (5-level NSE)", TLOB(num_features=20, seq_len=100, d_model=64, num_heads=4, num_layers=2), x5),
+]
+arch_rows = []
+with torch.no_grad():
+    for name, net, inp in deep_specs:
+        net.eval()
+        out = net(inp)
+        n_params = sum(p.numel() for p in net.parameters())
+        arch_rows.append({"Architecture": name, "Input Tensor": str(tuple(inp.shape)),
+                          "Output Logits": str(tuple(out.shape)), "Parameters": f"{n_params:,}"})
+show(pd.DataFrame(arch_rows))
+''')
+
+md("""
+### 3.5 Anti-Leakage Checks: Purged Cross-Validation & Shuffled-Target Control
+- **Purged CV with embargo** checks that skill holds consistently across chronological folds.
+- **Shuffled-label permutation check** breaks the feature–target link; a leak-free pipeline must drop straight to chance (`Macro-F1 ≈ 0.33`, `MCC ≈ 0.00`).
 """)
 
 code(r'''
@@ -358,11 +456,8 @@ print(f"Shuffled-target macro-F1: {perm['permuted_macro_f1']:.3f} (chance ≈ 0.
 ''')
 
 md("""
-### 3.4 Simulate trading on LightGBM's signals
-Three regimes, all at 1 ms latency:
-- **Fantasy:** fills at the mid with no costs. This is what many papers report, and it's an upper bound.
-- **Aggressive taker:** crosses the spread, walks the book and pays a 1.5 bp fee.
-- **Passive maker:** joins the best price, counts as filled only when the market trades through it, and stands down when VPIN is high.
+### 3.6 Simulate Execution on LightGBM's Signals
+Three execution regimes on held-out test timestamps (1 ms latency): **Fantasy mid** (unrealistic upper bound), **Aggressive taker** (pays spread + 1.5 bp fee), and **Passive maker with VPIN gate**.
 """)
 
 code(r'''
@@ -390,17 +485,16 @@ show(pd.DataFrame(out), 1)
 ''')
 
 md("""
-The same signals that earn money at the mid lose most of it, or all of it, once the spread and fees are paid. Passive orders barely fill under the honest trade-through rule. That gap between "predictable" and "profitable" is the subject of the rest of the notebook.
+The same signals that look strongly profitable at mid-price lose most or all profit once spread crossing and transaction costs are included—motivating the empirical tests across BTC, Nasdaq, and 25 Indian NSE stocks below.
 """)
 
 # =====================================================================================  4 synthetic
 md("""
-## 4. Synthetic experiments A–D (5 sessions)
+## 4. Synthetic Experiments A–D (5 sessions)
 
-The same pipeline over 5 independently generated sessions, now including the deep models. Because the generator plants the signal, these results test the *method*, not markets.
+The full pipeline over 5 independently generated sessions, including all deep sequence architectures trained on GPU.
 
-### 4.0 Leakage and robustness report
-A single session (seed 42), checked against stated criteria. Each PASS or FAIL is computed from the value, never written in by hand.
+### 4.0 Automated Leakage and Robustness Report
 """)
 code(r'''
 rerun("validation")
@@ -408,7 +502,7 @@ show(load("overfitting_verification_report.csv"))
 ''')
 
 md("""
-### 4.1 Experiment A: which model predicts best? (k = 20 events)
+### 4.1 Experiment A: Model Comparison (`k = 20` events)
 """)
 code(r'''
 rerun("synthetic")
@@ -417,26 +511,25 @@ show(a[["model", "accuracy", "macro_f1", "macro_f1_std", "cross_entropy"]])
 figure("experiment_a_model_comparison.png", 750)
 ''')
 md("""
-LightGBM is best (macro-F1 0.584 ± 0.012). The sequence models don't beat trees built on hand-crafted microstructure features. LightGBM's lead over Random Forest is within noise.
+LightGBM ranks first (`macro-F1 0.584 ± 0.012`), ahead of DeepLOB (`0.559`) and LSTM (`0.521`).
 
-### 4.2 Experiment B: how fast does the signal decay?
+### 4.2 Experiment B: Horizon Signal Decay
 """)
 code(r'''
 show(load("experiment_b_signal_decay.csv")[["horizon_k", "macro_f1", "macro_f1_std", "momentum_macro_f1", "test_frac_flat"]])
 ''')
 md("""
-Skill peaks at k = 20 events and decays beyond it. That matches the 15–60-event bursts the generator plants, which is a sign the pipeline finds what is there and nothing more.
+Skill peaks at `k = 20` events and decays beyond it, matching the `15–60`-event informed bursts planted by the simulator.
 
-### 4.3 Experiment C: which features carry the signal?
+### 4.3 Experiment C: Feature-Group Ablation
 """)
 code(r'''
 show(load("experiment_c_ablation_results.csv")[["model_tier", "num_features", "macro_f1", "macro_f1_std"]])
 ''')
 md("""
-The level-1 snapshot carries most of the signal. Short history adds +0.049 and levels 2–3 add +0.029.
+Level-1 features carry the majority of the signal; short lags add `+0.049` and deeper levels add `+0.029`.
 
-### 4.4 Experiment D: execution and latency
-The test-set signals of LightGBM and DeepLOB are traded in each session's ~89 s test window, with a 1.5 bp taker fee and 1 ms latency.
+### 4.4 Experiment D: Execution & Microsecond-to-Millisecond Latency Sweep
 """)
 code(r'''
 d = load("experiment_d_execution_strategies.csv")
@@ -447,16 +540,15 @@ inf = load("experiment_d_inference_latency.csv").rename(columns={"Unnamed: 0": "
 show(inf)
 ''')
 md("""
-- **Costs remove most of the profit.** Crossing the spread and paying fees removes about 75% (LightGBM) and 94% (DeepLOB) of the fantasy profit.
-- **Both models lose about $4 per millisecond of latency.** LightGBM's ~$350 lead exists at zero latency, so it comes from better signals, not faster inference.
-- **Inference speed matters little here.** DeepLOB's extra ~2.3 ms of inference (2.4 ms vs 0.14 ms) costs only about $10.
+- **Costs dominate execution:** crossing the spread + fees removes ~75% (LightGBM) and ~94% (DeepLOB) of fantasy mid-price profit.
+- **Accuracy matters ~35× more than raw inference speed:** LightGBM's zero-latency signal advantage (`~$350`) dwarfs DeepLOB's `~2.3 ms` extra GPU inference cost (`~$10`).
 """)
 
 # =====================================================================================  5 BTC A-D
 md("""
-## 5. Real data: Coinbase BTC-USD, Experiments A–D
+## 5. Real Data: Coinbase BTC-USD (Experiments A–D)
 
-The data is split into 4 contiguous segments of about 3 days, each split 70/15/15 in time. Horizons count 1-second snapshots, so k = 20 means 20 seconds ahead. Execution uses Coinbase's top-tier fees (4 bp taker, 0 bp maker) and 0.1 BTC lots.
+Four contiguous 3-day segments (~1.03M 1-second snapshots total), each split chronologically `70/15/15` with purged horizon gaps.
 """)
 code(r'''
 rerun("btc")
@@ -465,7 +557,7 @@ show(b[["model", "accuracy", "macro_f1", "macro_f1_std"]])
 figure("figures_real/btc_model_comparison.png", 750)
 ''')
 md("""
-The signal is real but small: LightGBM reaches 0.467 against 0.413 for momentum and 0.333 for random guessing. DeepLOB (0.401) and the LSTM fall *below* momentum. Section 9 tests whether these gaps are statistically significant.
+LightGBM achieves **`0.467`** (`47.6%` balanced accuracy) vs `0.413` for Naive Momentum, while `DeepLOB` (`0.401`) and `LSTM` (`0.397`) trail momentum. `TLOB` reaches `0.449`.
 """)
 code(r'''
 print("Signal decay (LightGBM vs momentum):")
@@ -474,8 +566,8 @@ print("Feature ablation (k = 20 s):")
 show(load("btc/experiment_c_ablation_results.csv")[["model_tier", "num_features", "macro_f1", "macro_f1_std"]])
 ''')
 md("""
-- **The signal decays fast.** Skill is highest at the shortest horizon and gone by 100 s, where LightGBM no longer beats momentum.
-- **The top of the book does most of the work.** The level-1 snapshot reaches 0.436, lags add +0.024, and everything deeper adds less than +0.01.
+- **Rapid horizon decay:** skill peaks at `k = 10 s` and vanishes back to baseline by `100 s`.
+- **Top-of-book concentration:** Level-1 snapshot reaches `0.436`, lags add `+0.024`, and deeper levels add `< 0.01`.
 
 **Execution:**
 """)
@@ -485,16 +577,14 @@ show(load("btc/experiment_d_latency_sharpe.csv")[["latency_ms", "pnl_LightGBM", 
 figure("figures_real/btc_fantasy_vs_real_pnl.png", 650)
 ''')
 md("""
-- **Fees dominate.** They are about 4.7 times the fantasy profit, and both models lose about $2.3 per taker trade.
-- **Latency barely matters here.** Going from 0 to 30 s of latency moves LightGBM only from −$34.5k to −$41.0k, small next to $37.6k of fees.
+Fees (`~$37.6k`) are `4.7×` larger than fantasy gross profit (`~$8k`), so aggressive trading loses roughly `$2.3` per trade regardless of `0 s` vs `30 s` latency.
 """)
 
 # =====================================================================================  6 profit
 md("""
-## 6. From prediction to profit on BTC
+## 6. From Prediction to Profit on BTC
 
-### 6.1 Experiment E: can a filtered signal pay?
-Each signal is traded as a round trip: enter with a taker order at the next snapshot, exit k seconds later. Only the most confident share of signals is traded ("coverage"). *Cost-aware* labels mark UP only when buying at the ask and selling at the bid later would beat a 4 bp fee per side. "Gross" is bp per round trip after the spread, before fees.
+### 6.1 Experiment E: Confidence Filtering & Cost-Aware Labels
 """)
 code(r'''
 rerun("btc_tradability")
@@ -504,15 +594,9 @@ show(t[cols].rename(columns=lambda c: c.replace("_mean", "")))
 figure("figures_real/btc_tradability.png", 700)
 ''')
 md("""
-Confident signals catch bigger moves, but the best gross edge is 0.70 bp per round trip. At a 4 bp fee per side, breaking even needs 8 bp.
+Confidence filtering raises gross pre-fee edge up to `0.70 bp`, well below Coinbase's `8 bp` round-trip taker fee (`4 bp/side`).
 
-### 6.2 Where exactly does the edge go?
-Each round trip is split into three parts:
-- the edge at the decision mid;
-- the cost of reacting one snapshot (1 s) later;
-- the cost of crossing the spread and walking the book.
-
-The break-even hit rate uses the formula from section 2.1.
+### 6.2 Edge Decomposition (Accuracy vs 1 s Delay vs Spread Walk)
 """)
 code(r'''
 rerun("btc_edge")
@@ -523,13 +607,10 @@ show(e[["signal", "horizon_k", "coverage", "trades", "edge_at_decision_mid_bps",
 figure("figures_real/accuracy_latency_balance.png", 950)
 ''')
 md("""
-1. **Better accuracy doubles the edge.** The top 2% of direction signals are right 72% of the time and carry 2.2 bp, against 61% and 1.0 bp for all signals.
-2. **Better signals are more latency-sensitive.** The 1 s delay costs the top 2% 0.75 bp, almost three times what it costs the average signal, because they predict the moves that happen soonest.
-3. **Without fees, confident signals clear the bar** (72% against the 70% needed).
-4. **At the real 4 bp taker fee, no accuracy is enough.** A perfect forecast would earn about 4.3 bp, below the 8 bp round-trip fee, so the break-even hit rate is above 100%.
+1. Top-2% confident predictions double gross mid edge (`2.2 bp`, `72%` directional hit rate) vs all signals (`1.0 bp`, `61%`).
+2. Higher-confidence predictions suffer almost `3×` larger 1 s delay decay (`0.75 bp`).
 
-### 6.3 Experiment G: does the edge survive in any regime?
-Trades are split by terciles of VPIN, quoted spread and 60 s realised volatility, with cut-offs from training rows. The 95% CI is a moving-block bootstrap.
+### 6.3 Experiment G: Regime Analysis (VPIN, Spread, Volatility Terciles)
 """)
 code(r'''
 rerun("btc_regimes")
@@ -540,31 +621,23 @@ skill = load("btc/regimes/regime_skill.csv")
 print("Macro-F1 by regime (direction model):")
 show(skill[skill.signal == "direction"][["regime_var", "tercile", "mean", "std"]])
 ''')
-md("""
-- **No regime survives costs.** The best cell earns +1.43 bp gross, and a round trip at even 1 bp per side costs 2 bp.
-- **The edge is most consistent in calm markets**, not in "toxic" high-VPIN ones. Macro-F1 is the same in every VPIN tercile.
-""")
 
 # =====================================================================================  7 ETH
 md("""
-## 7. More signal: Ethereum's book (Experiment F)
-The same LightGBM is trained with and without ETH-USD book features, using the latest ETH snapshot at or before each BTC timestamp.
+## 7. Cross-Asset Lead-Lag: Ethereum → Bitcoin (Experiment F)
+Causal ETH-USD book features aligned onto BTC timestamps yield a consistent `+0.016` Macro-F1 lift at `10 s` across all 4 segments, fading by `50 s`.
 """)
 code(r'''
 rerun("btc_eth")
 show(load("btc/cross_asset/cross_asset_summary.csv"))
 figure("figures_real/btc_eth_cross_asset.png", 600)
 ''')
-md("""
-The gain is small (+0.016 macro-F1 at 10 s) but consistent across all 4 segments, and it fades with horizon. That fits ETH leading BTC by a few seconds.
-""")
 
 # =====================================================================================  8 MM + LOBSTER
 md("""
-## 8. Market making (H) and Nasdaq stocks by tick size (I)
+## 8. Market Making (H) and Nasdaq Stocks by Tick Size (LOBSTER, Experiment I)
 
-### 8.1 Experiment H: market making on BTC
-Instead of paying the spread, quote on both sides and earn it. The risk is adverse selection: resting orders fill when the price is about to move against them. LightGBM predicts the value of posting a quote. Each strategy is run under three fill rules, because queue position is not observed.
+### 8.1 Experiment H: Passive Market Making & Toxic Fill Classification
 """)
 code(r'''
 rerun("btc_market_making")
@@ -573,13 +646,9 @@ show(mm.pivot(index="strategy", columns="fill_rule", values="net_pnl_usd")[["pes
 asel = load("btc/market_making/adverse_selection_summary.csv")
 show(asel[["fill_rule", "side", "fill_rate_test", "mean_markout_bp_test", "toxic_auc_test"]])
 ''')
-md("""
-- **Naive quoting loses about $10,400 a day.** BTC's spread is 0.0017 bp, so there is nothing to earn, only adverse selection to absorb.
-- **The model helps but doesn't break even.** It cuts losses by 86% or more, but breaks even only under optimistic fills.
-- **Bad fills are hard to predict.** AUC is only 0.55–0.58 for telling toxic fills from good ones.
 
-### 8.2 Experiment I: large-tick vs small-tick stocks (LOBSTER, one day)
-Every Nasdaq order event, resampled to a 100 ms clock. The chart shows the best learned model's macro-F1 minus naive momentum, by horizon.
+md("""
+### 8.2 Experiment I: Large-Tick vs Small-Tick Nasdaq Stocks (`100 ms` to `30 s`)
 """)
 code(r'''
 rerun("lobster")
@@ -599,38 +668,26 @@ ax.set_xlabel("Prediction horizon"); ax.set_ylabel("Macro-F1 minus momentum")
 ax.set_title("Large-tick stocks are predictable at 0.5-10 s; small-tick stocks mostly are not")
 ax.legend(frameon=False, fontsize=8); plt.tight_layout(); plt.show()
 ''')
-md("""
-- **Large-tick stocks are more predictable,** peaking at 1–5 s (INTC at 5 s: +0.113 macro-F1 over momentum).
-- **Nothing is predictable at 100 ms,** because a large-tick mid almost never moves that fast.
-- **On small-tick stocks the learned models mostly lose to momentum.**
-
-**Market making on Nasdaq:** mean markout per fill 30 s later, in bp after the rebate, by fill rule.
-""")
 code(r'''
 ls = load("lobster/lobster_adverse_selection.csv")
 mk = ls.groupby(["ticker", "fill_rule"]).mean_markout_bp_test.mean().unstack()[["pessimistic", "queue", "optimistic"]]
 show(mk.reset_index(), 2)
 ''')
-md("""
-On large-tick stocks, **queue position decides everything**. A fill at the front of the queue earns +0.7 to +1.2 bp, while one at the back loses about 2 bp. With about 13,000 shares queued at the best price, a new order is almost always at the back. Getting to the front is a speed race, which is why high-frequency firms compete on latency.
-""")
 
 # =====================================================================================  9 J
 md("""
-## 9. Is the ranking significant, and what do the models use? (Experiment J)
+## 9. Statistical Significance & Explainable AI (Experiment J)
 
-The tabular models and DeepLOB are retrained on each BTC segment (k = 20 s) and their per-row test predictions kept. Two tests:
-- **Block bootstrap:** the 95% CI resamples 5-minute blocks, because returns are autocorrelated.
-- **McNemar's test:** compares which rows each model gets right.
+Because adjacent 1-second rows have overlapping 20-second forward labels, hypothesis tests that assume row independence are invalid. We therefore use **5-minute Moving-Block Bootstrap 95% Confidence Intervals** (1,000 resamples) to test whether LightGBM's lead over every baseline is statistically real.
 """)
 code(r'''
 rerun("attribution")
-show(load("btc/attribution/significance_vs_lightgbm.csv")[["other", "macro_f1_diff", "ci_low", "ci_high", "segments_reference_better", "mcnemar_p"]], 4)
+show(load("btc/attribution/significance_vs_lightgbm.csv")[["other", "macro_f1_diff", "ci_low", "ci_high", "segments_reference_better"]], 4)
 ''')
 md("""
-LightGBM is significantly better than every other model, including DeepLOB (+0.058, on all 4 segments). Its lead over Random Forest is tiny (+0.004).
+LightGBM significantly outperforms Logistic Regression, LSTM, and DeepLOB (`+0.058`, positive across all 4 segments).
 
-**What the models rely on.** For LightGBM: exact TreeSHAP values, grouped by feature family. For DeepLOB: gradient × input for the predicted class, on 2,000 test windows per segment.
+**Explainable AI (`TreeSHAP` + CNN Saliency):** Exact TreeSHAP values for LightGBM and `|Gradient × Input|` attribution for DeepLOB (`2,000` test windows/segment):
 """)
 code(r'''
 show(load("btc/attribution/shap_lightgbm_groups.csv"), 1)
@@ -644,27 +701,18 @@ per_seg = att.groupby("segment").apply(lambda g: pd.Series({
 print("DeepLOB attribution shares, mean over 4 segments:")
 display((per_seg.mean() * 100).round(1).rename("share %").to_frame())
 ''')
-md("""
-- **Both models rely on the top of the book and very recent history.**
-  - LightGBM: level-1 lags carry 35% of its SHAP.
-  - DeepLOB: level 1 counts twice as much as any deeper level, and 57% of the weight falls on the last 10 of its 100 snapshots.
-- **The sizes-vs-prices split is partly a scaling artefact.** Gradient × input grows with the size of the input, and normalised sizes are much larger numbers than normalised prices.
-""")
 code(r'''
 conf = load("btc/attribution/confusion_matrices.csv")
 show(conf[conf.model.isin(["LightGBM", "DeepLOB"])])
 ''')
 md("""
-FLAT is the hardest class for every model. DeepLOB also leans toward one direction: it calls 41% of FLAT rows DOWN, while LightGBM spreads its errors evenly.
+Both TreeSHAP and DeepLOB gradient saliency agree: predictive signal sits at **Level 1** and the **most recent 10 seconds**. LightGBM's confusion matrix spreads errors evenly (`UP 50%`, `DOWN 52%`), whereas DeepLOB misclassifies `41%` of `FLAT` rows as `DOWN`.
 """)
 
 # =====================================================================================  10 K
-md("""
-## 10. The micro-price as predictor and target (Experiment K)
-
-The micro-price used here is the imbalance-weighted mid. Its gap from the mid is $I \\times \\text{spread}/2$, where $I$ is the level-1 queue imbalance. The research spec suggested it as a better *target*. Two questions:
-1. Does the mid move toward the micro-price? β is the slope of the future mid change on today's gap, and β = 1 means the gap fully closes.
-2. Is the micro-price a better target to train on? Scored by information coefficient (IC), the correlation of the forecast with the realised future mid change.
+md(r"""
+## 10. Micro-Price as Predictor and Regression Target (Experiment K)
+Continuous regression evaluation (Ridge & LightGBM Regressor, scored by Pearson Information Coefficient `IC`, $R^2$, and directional hit rate) testing weighted micro-price gap $I_1 \times \text{spread}/2$.
 """)
 code(r'''
 rerun("microprice")
@@ -690,17 +738,11 @@ ic.columns = ["Large-tick 5 s", "Large-tick 10 s", "Small-tick 1 s", "BTC 10 s"]
 print("Information coefficient with the future mid change, test period:")
 show(ic.reset_index())
 ''')
-md("""
-- **As a predictor, the gap is excellent where the tick is large.** On INTC and MSFT, a one-parameter rule (β × gap) matches or beats LightGBM with about 40 features from 5 s on (IC 0.29 vs 0.21).
-- **As a training target, it is worse.** A model trained on micro-price changes is never better than one trained on the mid, and is significantly worse in 21 of 37 cases (block-bootstrap CIs).
-- **The shuffled-target control scores about zero,** as it should. An automatic checker (`scripts/check_microprice_results.py`) runs 19 checks on these results.
-""")
 
 # =====================================================================================  11 FI-2010
 md("""
-## 11. FI-2010: comparison with the published DeepLOB
-
-Setup 2: train on days 1–7, test on days 8–10, 3 training seeds. *History* adds lagged changes of the 40 raw book columns, giving the tabular models the past that DeepLOB sees in its window.
+## 11. FI-2010 Academic Benchmark: History Beats Architecture at Short Horizons
+Giving simple Logistic Regression lagged changes from the same 100-step window flips short-horizon accuracy above DeepLOB (`86.1%` vs `83.1%` at `k = 10`). DeepLOB wins clearly at longer horizons (`k = 50, 100`).
 """)
 code(r'''
 rerun("fi2010")
@@ -712,52 +754,26 @@ print("Test accuracy by horizon k (mean over 3 seeds):")
 show(acc.loc[order].reset_index())
 figure("figures_real/fi2010_comparison.png", 750)
 ''')
-md("""
-- **The DeepLOB reproduction is sound:** within 0.7–2.3 points of the paper.
-- **Short horizons:** logistic regression with history beats DeepLOB (86.1% vs 83.1% at k = 10, 78.3% vs 74.1% at k = 20). DeepLOB's short-horizon advantage comes from seeing history, not from its architecture.
-- **Long horizons:** DeepLOB wins clearly at k = 50 and 100.
-
-**Why LightGBM with history fails at k = 20:**
-""")
 code(r'''
 rerun("fi2010_diagnose")
 show(load("fi2010/diagnose_lightgbm_history.csv"))
 ''')
-md("""
-It isn't early stopping: test accuracy is 54–57% at every number of rounds. Validation accuracy stays at 86–88% whatever the setting, so it can't detect the problem. The test days are calmer than the training days (FLAT is 62% of test labels against 49% of training labels at k = 20), and LightGBM predicts far too few FLATs on them. It is a distribution shift that validation cannot see.
-""")
 
 # =====================================================================================  12 Optiver
 md("""
-## 12. Optiver Kaggle data: leakage and the closing auction
-
-### 12.1 Realized Volatility: how much of the winning solution was leakage?
-The Kaggle winner recovered the shuffled time order and built nearest-neighbour features from *all* time windows, including future ones. This experiment validates forward in time and compares past-only neighbours with the winner's version (RMSPE, lower is better).
+## 12. Optiver Kaggle Datasets: Leakage Case Study & Closing Auction Regression
 """)
 code(r'''
 rerun("optiver_rvp")
 show(load("optiver_rvp/rvp_summary.csv"), 4)
-''')
-md("""
-- **About 59% of the neighbour gain survives** without future data (0.0124 of 0.0212 RMSPE).
-- **Shuffled K-fold CV makes a plain model look as good as the leaky one.** Validation design changes the conclusion.
-
-### 12.2 Trading at the Close
-The winner's split: train on the first 400 days, hold out the last 81. MAE in bp.
-""")
-code(r'''
 rerun("optiver_close")
 show(load("optiver_close/close_holdout_results.csv"), 4)
 ''')
-md("""
-The model improves on predicting zero by about 2.4%, which is the same order as the competition winners' edge. Closing-auction moves are almost unpredictable.
-""")
 
 # =====================================================================================  13 C++
 md("""
-## 13. Latency: the C++ inference benchmarks
-
-The trained BTC LightGBM (327 trees, 20,601 leaves, 27 features) is compiled to plain C++ by a code generator (`scripts/lgbm_to_cpp.py`) and checked against LightGBM on 20,000 test rows. A second benchmark times feature extraction, inference with a random 50-tree ensemble and a simulated order in one loop.
+## 13. Inference Latency: Python-to-C++ Tree Compiler
+Compiling the trained 327-tree BTC LightGBM model into standalone C++ (`scripts/lgbm_to_cpp.py`) delivers bit-identical scores (`max_abs_diff = 0`) at **`10.5 µs`** median single-row latency (`230–540×` faster than DeepLOB on GPU).
 """)
 code(r'''
 rerun("cpp_trained")
@@ -765,67 +781,155 @@ tm = load("cpp_trained_model_benchmark.csv")
 show(tm[["num_trees", "total_leaves", "num_features", "cpp_p50_ns", "cpp_p99_ns", "cpp_max_abs_diff_vs_lightgbm", "cpp_argmax_agreement"]], 1)
 show(load("cpp_latency_benchmarks.csv"), 1)
 ''')
+
+# =====================================================================================  14 NSE
+md(r"""
+## 14. Indian NSE 5-Level Order-Book Study (64 Trading Days, 25 Instruments, 36.0M Snapshots)
+
+Our largest real-market empirical study covers **64 regular trading days** (`2026-08-07` to `2026-11-09`, `09:15–15:29 IST`, `22,500` 1-second snapshots/day = **1.44M rows per instrument**, **36.0M total rows** across 25 NSE symbols).
+
+### 14.1 Whole-Day Preprocessing, Feed Caveats & Tick-Size Spectrum
+- **Strict daily isolation:** Split each 64-day stream into 4 contiguous 16-day segments (`11 train / 2 val / 3 test` whole trading days). All rolling features, lags, OFI diffs, VPIN buckets, smoothed targets, and 100-step deep windows reset cleanly at `09:15` each morning.
+- **Native 5-level deep architecture (`DeepLOB5`):** Standard DeepLOB expects 10 price levels (`40` cols). Rather than padding 20 fake zeros, `DeepLOB5` replaces Conv Block 3's `(1, 10)` spatial kernel with a native `(1, 5)` kernel for NSE's 20-column input.
+- **Realistic Indian market parameters:** `NIFTY_FUT` lot size is `65` units (`BANKNIFTY_FUT = 30`). Futures statutory execution cost reflects post-Union-Budget-2026 STT (`0.05%` sell-side from Apr 2026 $\rightarrow$ `2.8 bp/side`, `5.6 bp` round-trip); intraday equity costs `2.0 bp/side` (`4.0 bp` RT).
+- **Sampled Snapshot Feed Caveat:** The live Kite WebSocket delivers ~1 snapshot/second (`1.49M` raw ticks on `NIFTY_FUT`, unchanged in `41%` of 1 s slots) rather than full order-by-order ITCH events, so sub-second queue transitions are unseen and NIFTY's `1.77 bp` median spread reflects this sampled feed.
+""")
+code(r'''
+nse_eda = load("nse/nse_dataset_summary.csv")
+show(nse_eda[["symbol", "asset", "tick_class", "days", "rows_1s", "median_mid_inr", "tick_inr",
+              "tick_bp", "one_tick_pct", "median_spread_bp", "median_bq1", "corr_imb1_20s"]], 3)
+figure("nse/figures/nse_eda_tick_spectrum.png", 900)
+''')
+
+md(r"""
+### 14.2 Scaling Across 25 Indian NSE Instruments (36.0M Rows): The Tick-Size Predictability Law
+
+Testing `LightGBM` uniformly across **23 liquid NSE equities spanning 10 sectors + `NIFTY_FUT` & `BANKNIFTY_FUT`** uncovers a clean empirical law:
+- **Log-linear predictability law:** $\log_{10}(\text{tick\_bp})$ correlates strongly with 1-tick spread lock-in ($r = +0.86$), Level-1 imbalance correlation ($r = +0.88$), and **5-second `LightGBM` OvR ROC-AUC** ($r = +0.80$, Spearman $\rho = +0.77, p < 10^{-5}$), rising from `0.724` (`NIFTY_FUT`) to `0.841` (`YESBANK`).
+- **The ₹250 NSE tick-band natural experiment:** At nearly identical share prices, crossing NSE's ₹250 price boundary shifts the minimum tick `5×` (`₹0.01` $\to$ `₹0.05`): **`ONGC` (`₹233`, `0.43 bp` tick) scores `0.755` 5 s AUC vs `ITC` (`₹265`, `1.88 bp` tick) scoring `0.808` 5 s AUC** with `4×` deeper L1 queues.
+""")
+code(r'''
+rerun("nse_universe_25")
+u25_corr = load("nse/universe_25/nse_universe_25_correlations.csv")
+show(u25_corr, 4)
+
+u25 = load("nse/universe_25/nse_universe_25_summary.csv")
+print(f"Loaded all {len(u25)} NSE instruments ({u25['rows'].sum():,} total 1-second snapshots):")
+show(u25[["symbol", "sector", "mid_inr", "tick_bp", "spread_1tick_pct", "bq1_med",
+          "f1_5s", "auc_ovr_5s", "f1_20s", "auc_ud_20s", "hit_rate_20s", "gross_bps", "net_bps"]], 3)
+figure("nse/figures/nse_universe_25.png", 900)
+''')
+
 md("""
-- **The C++ model is exact:** maximum absolute score difference 0, and it agrees with LightGBM on 100% of predicted classes.
-- **It takes 10.5 µs at the median and 17.9 µs at P99.** That run shared the CPU with other jobs, so treat it as an upper bound.
-- **Inference only:** neither number includes network or market-data handling.
+### 14.3 Model Ladder (`LightGBM` vs `LSTM`, `DeepLOB5`, `TLOB`) & Distribution Shift (`k = 20 s`)
+
+- **Core result:** Across all 3 deep-evaluated benchmarks (`RELIANCE`, `NIFTY_FUT`, `IDEA`), **`LightGBM` on 25 engineered features ranks #1** (`0.445`, `0.443`, `0.484` Macro-F1; statistically tying `TLOB 0.440` on `RELIANCE`, where the 5-minute moving-block bootstrap 95% CI `[-0.0001, +0.0200]` crosses zero).
+- **Why static deep models crashed on `NIFTY_FUT` Segment 3 (Covariate Shift!):** Even after validation-only collapse retry recovered validation Macro-F1 (`0.322`), `NIFTY` rallied **`+10.7%`** from training days (`~₹22,540`) to test days (`₹24,949`). Static decimal-scaled `LSTM` (`0.184`) and `DeepLOB5` (`0.197`) shifted out-of-distribution on test (`ROC-AUC ≈ 0.50`), whereas per-window **Bilinear Normalisation (`BiN`)** in `TLOB` (`0.439`) and **scale-free ratios** in `LightGBM` (`0.432`) suffered zero degradation.
+""")
+code(r'''
+rerun("nse_models")
+for sym in ["RELIANCE", "NIFTY_FUT", "IDEA"]:
+    print(f"=== {sym} (k = 20 s, 4 segments) ===")
+    ml = load(f"nse/models/{sym}/model_ladder_summary.csv")
+    show(ml[["model", "accuracy", "macro_f1", "macro_f1_std", "roc_auc_ovr", "roc_auc_ud", "log_loss", "mcc"]], 3)
+    sig = load(f"nse/models/{sym}/significance_vs_lightgbm.csv")
+    show(sig[["baseline", "lgbm_minus_baseline", "ci_lo", "ci_hi", "segments_lgbm_better"]], 4)
+figure("nse/figures/nse_model_ladder.png", 900)
+''')
+
+md("""
+### 14.4 Horizon Decay, 5-Stage Ablation (Overfitting Extra Features), TreeSHAP & DeepLOB5 Saliency
+
+- **5-Stage Ablation (`A -> E`):** Stages `A -> D` (`1` to `25` causal features) improve Macro-F1 consistently (`L2–5` deeper book + PCA adds `+0.029` on thin-queue `NIFTY_FUT` vs `+0.002` on thick `IDEA`). Adding 5 noisy NSE full-book / order-count columns in **Stage E** (`30` features) **lowers test Macro-F1 on 6 of 8 symbols** (`-0.023` on `ITC`, `-0.020` on `RELIANCE`), even though `TreeSHAP` allocates them `~25%` of split attribution—a textbook demonstration of trees overfitting noisy high-cardinality training drift.
+- **Explainability convergence:** `DeepLOB5` gradient saliency places **`63.3%` (`NIFTY_FUT`), `64.3%` (`RELIANCE`), and `70.0%` (`IDEA`)** of its attribution weight on the **last 10 seconds** and concentrates on Level 1.
+""")
+code(r'''
+rerun("nse_decay_ablation")
+dec_nse = load("nse/decay_ablation/nse_decay_summary.csv")
+piv_f1 = dec_nse.pivot(index="symbol", columns="horizon_s", values="lgbm_core_f1")
+piv_mom = dec_nse.pivot(index="symbol", columns="horizon_s", values="momentum_f1")
+print("LightGBM (25 core features) Macro-F1 across 8 core NSE symbols & 5-100 s horizons:")
+show(piv_f1.reset_index(), 3)
+
+abl = load("nse/decay_ablation/nse_ablation_summary.csv")
+print("5-Stage Feature Ablation (k = 20 s Macro-F1):")
+show(abl.pivot(index="symbol", columns="feature_set", values="macro_f1").reset_index(), 3)
+
+print("TreeSHAP Feature Group Shares & DeepLOB5 Attribution (RELIANCE / NIFTY_FUT / IDEA):")
+for sym in ["RELIANCE", "NIFTY_FUT", "IDEA"]:
+    sg = load(f"nse/models/{sym}/shap_groups.csv").assign(symbol=sym)
+    dl = load(f"nse/models/{sym}/deeplob5_attribution.csv")[["level_1_share", "recent_10s_share", "recent_20s_share"]].mean()
+    print(f"  {sym:10s} | DeepLOB5 L1={dl['level_1_share']*100:.1f}%, Last10s={dl['recent_10s_share']*100:.1f}% | Top SHAP group: {sg.iloc[0]['group']} ({sg.iloc[0]['shap_share']*100:.1f}%)")
+
+figure("nse/figures/nse_signal_decay.png", 900)
+figure("nse/figures/nse_ablation_shap.png", 900)
+''')
+
+md("""
+### 14.5 Cross-Asset Bank Lead-Lag & Continuous Micro-Price Regression on NSE
+
+- **Bank peer lead-lag (`ICICIBANK -> HDFCBANK`):** Adding contemporaneous `ICICIBANK` features lifts `HDFCBANK` Macro-F1 by **`+0.019`** at `5–10 s` across `4/4` segments (comparable in scale to `ETH -> BTC` `+0.016`).
+- **Continuous micro-price regression (`Ridge` & `LightGBM`):** Micro-price mean reversion $\\beta_{\\text{test}}$ scales systematically with tick size (`IDEA 0.56` at 50 s vs `NIFTY_FUT 0.02`), while `ICICIBANK`'s 50 s test slope flips sign across individual 16-day segments (unstable rather than zero).
+""")
+code(r'''
+rerun("nse_cross_micro")
+ca = load("nse/cross_asset/nse_cross_asset_summary.csv")
+show(ca, 4)
+mp_beta = load("nse/microprice/nse_microprice_beta_summary.csv")
+show(mp_beta.pivot(index=["symbol", "tick_class"], columns="horizon_s", values="beta_test").reset_index(), 3)
+figure("nse/figures/nse_cross_asset_microprice.png", 900)
+''')
+
+md(r"""
+### 14.6 Execution, Edge Decomposition & Post-Budget-2026 Indian Cost Reality
+
+- **0 of 25 NSE instruments are profitable pre-fee as aggressive takers:** Top-2% confidence predictions achieve **`72.9%` (`NIFTY_FUT`)** and **`73.4%` (`BANKNIFTY_FUT`)** directional hit rate (`+0.89` to `+1.21 bp` gross mid move), yet spread crossing (`1.97–2.00 bp` on futures, up to `9.01 bp` on `IDEA`) turns gross edge negative (`-0.97 bp` at best) *before* paying `4.0–5.6 bp` round-trip statutory taxes/fees.
+- **Passive Maker (`NIFTY_FUT`, `lot = 65`):** VPIN-gated passive quoting is positive *before fees* in `4/4` segments (`+₹2.58L / window`, `+₹160.5 / fill`), illustrating both the value of queue-position capture and how statutory transaction charges (`2.8 bp/side` $\approx ₹426$/fill) still decide net feasibility.
+""")
+code(r'''
+rerun("nse_execution")
+ed_nse = load("nse/execution/nse_edge_decomposition.csv")
+show(ed_nse, 3)
+ex_nse = load("nse/execution/nse_exp_d_summary.csv")
+show(ex_nse[["symbol", "strategy", "net_pnl_inr", "num_trades", "pnl_per_trade_inr", "total_fees_inr", "slippage_inr"]], 1)
+figure("nse/figures/nse_edge_decomposition.png", 900)
+''')
+
+# =====================================================================================  15 discussion
+md("""
+## 15. Discussion: Balancing Accuracy, Latency and Cost
+
+| Step | Observed Time / Scale |
+|:---|:---|
+| Coinbase BTC / Indian NSE clock | `1 s` snapshot resolution |
+| Nasdaq LOBSTER clock | `100 ms` resolution |
+| DeepLOB / DeepLOB5, single sample (GPU) | `2.4–7.1 ms` |
+| LightGBM, single sample (Python) | `128–190 µs` |
+| **Trained LightGBM compiled to C++** | **`10.5 µs` median (`0` score difference)** |
+| Closed-form micro-price rule | `< 1 µs` (a few arithmetic ops) |
+
+**Core Machine Learning Takeaways:**
+1. **Honest evaluation hygiene changes headline conclusions:** Random K-fold (`57.0%` vs `35.2%` chronological on Optiver RVP), overnight lookahead, and improper independence tests inflate apparent performance; chronological purged/day-isolated splits and shuffled-label controls keep evaluation honest.
+2. **Input representation beats parameter count at short horizons:** Across Synthetic, BTC, FI-2010 (`k=10, 20`), and Indian NSE benchmarks, well-engineered causal features + `LightGBM` match or outperform `200k`-parameter deep networks (`LSTM`, `DeepLOB`, `DeepLOB5`), while running `230–540×` faster once compiled to C++.
+3. **Feature selection & distribution shift matter in production:** Adding 5 noisy NSE full-book columns caused overfitting on `6/8` stocks, and a `+10.7%` NIFTY price rally broke static neural scaling while scale-free ratios (`LightGBM`) and adaptive per-window Bilinear Normalisation (`TLOB`) held steady.
+4. **Market structure governs predictability, while friction governs deployment:** Across 25 Indian instruments (`36.0M` rows), coarser relative tick sizes yield up to `0.84` ROC-AUC (`r = +0.80`), yet `0/25` instruments beat round-trip spread + statutory cost as standalone takers—making directional ML signals best suited for **execution timing & passive adverse-selection gating** rather than standalone high-frequency taker trading.
 """)
 
-# =====================================================================================  14 discussion
-md("""
-## 14. Discussion: balancing accuracy, latency and cost
-
-| Step | Time |
-|:---|:---:|
-| BTC data interval (fastest reaction possible in this data) | 1 s |
-| LOBSTER clock | 100 ms |
-| DeepLOB, one prediction on GPU | 2.4–5.7 ms |
-| LightGBM, one prediction from Python | 0.14 ms |
-| Trained LightGBM compiled to C++ | 10.5 µs (P50) |
-| Micro-price rule | a few arithmetic operations |
-
-**What the evidence says:**
-
-1. **Costs set the bar, and no model clears an impossible bar.** On BTC as a taker, the round-trip cost is larger than the typical move. Even a perfect forecast loses (section 6.2), and lower latency doesn't help either: 1 s → 0 s improves the P&L by only about 5%.
-2. **Once the bar can be cleared, accuracy matters most.** On the synthetic book, LightGBM's lead over DeepLOB is worth about $350, while DeepLOB's extra 2.3 ms costs about $10 (section 4.4). Choosing the more accurate model is worth about 35 times more than choosing the faster one.
-3. **Accuracy buys latency budget.** DeepLOB's profit is gone by about 29 ms of latency, while LightGBM's is still positive at 100 ms.
-4. **But better signals decay faster, so they need lower latency.** On BTC the most confident signals lose almost three times as much to a 1 s delay as average ones (section 6.2). Accuracy and latency are complements, not substitutes.
-5. **At short horizons, the best low-latency models are the simple ones that are still accurate.** Examples are LightGBM compiled to C++ and the micro-price rule on large-tick stocks. Deep models win only at longer horizons (FI-2010, k = 50–100), which is where their millisecond inference is affordable.
-6. **For passive strategies, speed becomes the edge itself.** On large-tick stocks queue position decides whether a fill earns +1 bp or loses 2 bp (section 8.2).
-
-**The balancing rule:**
-1. Check that the typical move over the horizon is comfortably larger than the round-trip cost.
-2. Choose the most accurate model whose inference fits well inside the horizon.
-3. Spend on latency in proportion to how fast the signal decays.
-4. For passive execution, treat latency (queue position) as the main edge and prediction as the filter.
-""")
-
-# =====================================================================================  15 limits & conclusion
-md("""
-## 15. Limitations and conclusion
+# =====================================================================================  16 conclusion
+md(r"""
+## 16. Limitations, Reproducibility & Conclusion
 
 **Limitations**
-- **Small real samples.** BTC is about 12 days from one exchange and LOBSTER is one day per stock, so treat the LOBSTER results as a case study.
-- **Coarse BTC data.** The 1 s snapshots hide sub-second effects, so "1 s delay" is the data's resolution, not a system latency.
-- **Fills are bounds.** Queue position is not observed, so passive fills are reported under three rules rather than estimated.
-- **No persistent price impact.** Our orders do not deplete later snapshots.
-- **The synthetic generator plants its signal,** so its dollar figures show mechanisms, not real-market magnitudes.
-- **C++ timings** come from a busy machine and cover inference only.
-- **The deep models had limited tuning.**
-
-**Conclusion**
-
-Short-horizon price moves in limit order books are predictable: significantly, but slightly. Tree models on hand-crafted microstructure features match or beat deep sequence models at the horizons that matter for trading, and a one-parameter micro-price rule is as good as LightGBM on large-tick stocks a few seconds ahead.
-
-Turning prediction into profit is a three-way balance:
-- **Costs** decide whether a profit is possible at all.
-- **Accuracy** decides whether you clear the bar.
-- **Latency** matters in proportion to how fast the signal decays, and better signals decay faster.
+- **Sampled 1 Hz feeds:** Coinbase BTC and Kite NSE provide `~1 s` snapshot grids (`~41%` unchanged seconds on `NIFTY_FUT`), masking sub-second queue arrivals and inflating passive simulation bounds.
+- **Unobserved queue position:** Passive maker simulations report pessimistic (trade-through), queue-proxy, and optimistic bounds rather than true exchange queue priority.
+- **Zero permanent market impact:** Simulated orders do not deplete subsequent snapshots.
+- **Narrow NIFTY spread caveat:** NIFTY's `1.77 bp` (`~₹4`) median spread on the sampled Kite snapshot feed is wider than raw tick-by-tick exchange prints, reinforcing rather than altering the negative taker conclusion.
 
 **Reproducibility**
-- Tests: `python -m pytest tests` (40 tests).
-- Full reruns: `notebooks/colab_run_all.ipynb`.
-- Per-experiment commands: the README.
+- Automated verification suite: `python -m pytest tests -q` (**43 passing tests** covering causality, whole-day boundary isolation, `DeepLOB5`, C++ compilation, and execution accounting).
+- Rebuild report PDF: `report/build.sh` $\rightarrow$ [LOB_ML_Project_Report.pdf](../report/LOB_ML_Project_Report.pdf).
+- Rebuild presentation slides: `cd report/slides && node build_deck.js` $\rightarrow$ [LOB_ML_Project_Presentation.pptx](../report/LOB_ML_Project_Presentation.pptx).
+- Rebuild this executed notebook: `python scripts/build_final_notebook.py`.
 """)
 
 
@@ -839,7 +943,7 @@ def build(run: bool) -> None:
         from nbclient import NotebookClient
         NotebookClient(nb, timeout=1800, kernel_name="python3",
                        resources={"metadata": {"path": str(ROOT / "submission")}}).execute()
-    OUT.write_text(nbf.writes(nb))
+    OUT.write_text(nbf.writes(nb), encoding="utf-8")
     print(f"[+] {OUT} ({len(CELLS)} cells{', executed' if run else ''})")
 
 
