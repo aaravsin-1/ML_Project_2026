@@ -1,0 +1,46 @@
+symbol,model,rank,feature,shap_share_pct,gain_share_pct
+RELIANCE,LightGBM v2 + SSF (46f),1,day_progress,14.23,17.79
+RELIANCE,LightGBM v2 + SSF (46f),2,vol_30s_ticks,9.54,18.14
+RELIANCE,LightGBM v2 + SSF (46f),3,mid_drift_5s_ticks,9.41,11.11
+RELIANCE,LightGBM v2 + SSF (46f),4,ssf_ret_5s_bp,5.79,4.7
+RELIANCE,LightGBM v2 + SSF (46f),5,vol_10s_ticks,3.81,3.38
+RELIANCE,LightGBM v2 + SSF (46f),6,basis_dev_bp,3.52,3.08
+RELIANCE,LightGBM v2 + SSF (46f),7,lead_15s_bp,3.5,1.6
+RELIANCE,LightGBM v2 + SSF (46f),8,slope_ask,3.43,2.65
+RELIANCE,LightGBM v2 + SSF (46f),9,ssf_imb_l5,3.24,2.05
+RELIANCE,LightGBM v2 + SSF (46f),10,slope_bid,3.17,2.42
+RELIANCE,LightGBM v2 + SSF (46f),11,imbalance_l3,2.75,2.28
+RELIANCE,LightGBM v2 + SSF (46f),12,ofi_lag_1,2.67,1.31
+RELIANCE,LightGBM v2 + SSF (46f),13,ofi_mean_10s,2.66,1.69
+RELIANCE,LightGBM v2 + SSF (46f),14,vpin,2.21,3.79
+RELIANCE,LightGBM v2 + SSF (46f),15,imbalance_lag_2,2.1,1.2
+NIFTY_FUT,LightGBM v2 (38f),1,slope_ask,13.1,10.5
+NIFTY_FUT,LightGBM v2 (38f),2,slope_bid,12.93,9.85
+NIFTY_FUT,LightGBM v2 (38f),3,mid_drift_5s_ticks,11.21,13.33
+NIFTY_FUT,LightGBM v2 (38f),4,vol_30s_ticks,7.62,11.86
+NIFTY_FUT,LightGBM v2 (38f),5,day_progress,5.89,7.89
+NIFTY_FUT,LightGBM v2 (38f),6,imbalance_l5,5.89,4.1
+NIFTY_FUT,LightGBM v2 (38f),7,ofi_lag_1,3.89,2.26
+NIFTY_FUT,LightGBM v2 (38f),8,mid_drift_60s_ticks,3.88,3.28
+NIFTY_FUT,LightGBM v2 (38f),9,vol_10s_ticks,3.63,3.97
+NIFTY_FUT,LightGBM v2 (38f),10,ofi_mean_10s,3.56,3.04
+NIFTY_FUT,LightGBM v2 (38f),11,vpin,2.84,5.38
+NIFTY_FUT,LightGBM v2 (38f),12,ofi_l1,2.58,1.58
+NIFTY_FUT,LightGBM v2 (38f),13,ofi_pca1,1.98,1.58
+NIFTY_FUT,LightGBM v2 (38f),14,spread_ticks,1.97,2.11
+NIFTY_FUT,LightGBM v2 (38f),15,ofi_mean_30s,1.81,2.13
+IDEA,LightGBM v2 + SSF (46f),1,day_progress,10.53,11.72
+IDEA,LightGBM v2 + SSF (46f),2,vol_10s_ticks,8.75,12.33
+IDEA,LightGBM v2 + SSF (46f),3,mid_drift_5s_ticks,8.11,11.84
+IDEA,LightGBM v2 + SSF (46f),4,micro_deviation,6.44,6.8
+IDEA,LightGBM v2 + SSF (46f),5,imbalance_l1,6.41,4.9
+IDEA,LightGBM v2 + SSF (46f),6,basis_dev_bp,6.08,5.0
+IDEA,LightGBM v2 + SSF (46f),7,vpin,4.41,5.69
+IDEA,LightGBM v2 + SSF (46f),8,vol_30s_ticks,3.74,3.51
+IDEA,LightGBM v2 + SSF (46f),9,ssf_imb_l1,3.28,2.67
+IDEA,LightGBM v2 + SSF (46f),10,slope_bid,3.0,3.52
+IDEA,LightGBM v2 + SSF (46f),11,ssf_imb_l5,2.86,4.06
+IDEA,LightGBM v2 + SSF (46f),12,ofi_mean_10s,2.8,1.84
+IDEA,LightGBM v2 + SSF (46f),13,slope_ask,2.77,3.36
+IDEA,LightGBM v2 + SSF (46f),14,imb1_mean_20s,2.57,1.36
+IDEA,LightGBM v2 + SSF (46f),15,micro_dev_lag_2,2.51,1.32

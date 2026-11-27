@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LOB Alpha Studio · Live Order-Book ML Deployment</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div>
+          <div class="brand-title">LOB Alpha Studio</div>
+          <div class="brand-sub">Live FastAPI Inference · LightGBM + Block PCA + TreeSHAP · 36.0M NSE Study</div>
+        </div>
+      </div>
+
+      <nav class="nav-pills" role="tablist" aria-label="Dashboard sections">
+        <button class="nav-pill active" data-tab="terminal" role="tab" aria-selected="true">Live Terminal</button>
+        <button class="nav-pill" data-tab="sandbox" role="tab" aria-selected="false">Model Sandbox</button>
+        <button class="nav-pill" data-tab="diagnostics" role="tab" aria-selected="false">Error Anatomy &amp; v2</button>
+        <button class="nav-pill" data-tab="mlaudit" role="tab" aria-selected="false">ML Evaluation &amp; Audit</button>
+        <button class="nav-pill" data-tab="arena" role="tab" aria-selected="false">ML Findings &amp; Arena</button>
+        <button class="nav-pill" data-tab="universe" role="tab" aria-selected="false">25-Stock NSE Law</button>
+      </nav>
+
+      <div class="topbar-right">
+        <span class="status-badge" id="api-status-badge" title="Live Python/LightGBM FastAPI Backend">
+          <span class="dot"></span> API Live · 10.5 µs C++
+        </span>
+        <button class="theme-btn" id="theme-toggle" title="Toggle Light / Dark Terminal Theme" aria-label="Toggle Theme">
+          <span id="theme-icon">☾</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- ==================== VIEW 1: LIVE TERMINAL ==================== -->
+    <section id="view-terminal" class="view active">
+      <div class="control-strip card">
+        <div class="instrument-pills" id="replay-pills"></div>
+        <div class="playback-bar">
+          <button class="btn btn-icon" id="btn-prev" title="Step back 1 second">-1s</button>
+          <button class="btn btn-primary" id="btn-play">▶ Play</button>
+          <button class="btn btn-icon" id="btn-next" title="Step forward 1 second">+1s</button>
+          <div class="speed-group" role="group" aria-label="Playback speed">
+            <button class="btn-chip active" data-speed="1">1×</button>
+            <button class="btn-chip" data-speed="4">4×</button>
+            <button class="btn-chip" data-speed="10">10×</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="diag-jump-strip card">
+        <span class="muted">Jump to Regime:</span>
+        <button class="btn btn-accent btn-sm" id="btn-jump-signal" title="Jump to a high-conviction directional signal">⚡ Confident Signal</button>
+        <button class="btn btn-up-soft btn-sm" id="btn-jump-ssf" title="Moments where 46f Cross-Market Futures + 10s/20s Multi-Horizon rescues 38f cash-only v2">🚀 +SSF Futures Rescue</button>
+        <button class="btn btn-up-soft btn-sm" id="btn-jump-v2" title="Moments where LightGBM v2 + Hybrid fixes baseline LightGBM's wrong prediction">✨ v2 Fixes Old Error</button>
+        <button class="btn btn-blue-soft btn-sm" id="btn-jump-tlob" title="Moments where TLOB's 100s Transformer context wins while baseline LightGBM misses">🧠 TLOB Wins (100s)</button>
+        <button class="btn btn-blue-soft btn-sm" id="btn-jump-lgbm" title="Moments where fast tree splits react to 1s L1 reversals faster than TLOB">⚡ LGBM Wins (1s Flip)</button>
+        <button class="btn btn-sm" id="btn-jump-trap" title="Moments right near the ±α dead-zone boundary where most average errors happen">⚠ ±α Boundary Trap</button>
+      </div>
+
+      <div class="scrubber-row card">
+        <div class="scrubber-meta">
+          <span class="mono" id="replay-clock">--:--:-- IST</span>
+          <span class="muted" id="replay-date-meta">Loading segment...</span>
+        </div>
+        <input type="range" id="replay-slider" min="90" max="870" value="120" class="slider" />
+        <div class="scrubber-stats">
+          <span class="pill-metric">Step <b class="mono" id="replay-step-num">120</b>/900</span>
+          <span class="pill-metric">Session Dir Hit: <b class="mono" id="session-hit-rate">--</b></span>
+        </div>
+      </div>
+
+      <div id="shift-alert" class="alert-banner hidden">
+        <span class="alert-badge">Covariate Shift Event</span>
+        <span id="shift-alert-text"></span>
+      </div>
+
+      <div class="grid-terminal">
+        <!-- Left column: Order book ladder + Live TreeSHAP -->
+        <div class="col-stack">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>5-Level Limit Order Book</h2>
+                <p class="card-sub">Live snapshot queues resting at Ask (sell) and Bid (buy) prices</p>
+              </div>
+              <span class="mono tag" id="ob-tick-tag">Tick ₹0.10</span>
+            </div>
+            <div class="kpis-mini">
+              <div class="kpi-mini"><span>Mid Price</span><b class="mono" id="ob-mid">--</b></div>
+              <div class="kpi-mini"><span>Spread</span><b class="mono" id="ob-spread">--</b></div>
+              <div class="kpi-mini"><span>L1 Imbalance</span><b class="mono" id="ob-imb1">--</b></div>
+            </div>
+            <div id="ob-ladder" class="ob-ladder"></div>
+            <div class="imb-meter-wrap">
+              <div class="imb-meter-labels">
+                <span>Sell Pressure (-1)</span>
+                <span id="ob-imb-caption">Balanced book</span>
+                <span>Buy Pressure (+1)</span>
+              </div>
+              <div class="imb-meter-track">
+                <div class="imb-meter-center"></div>
+                <div class="imb-meter-fill" id="ob-imb-fill"></div>
+              </div>
+            </div>
+            <div class="ob-ssf-strip" id="ob-ssf-strip">
+              <div class="ssf-head">
+                <span>Cross-Market Companion Futures (<b id="ssf-source-name">SSF</b>)</span>
+                <span class="mini-tag" style="color:var(--up)">+8f Lead</span>
+              </div>
+              <div class="ssf-metrics mono">
+                <div><span class="muted">Fut L1 Imb</span><b id="ssf-imb-val">--</b></div>
+                <div><span class="muted">Fut 5s Ret</span><b id="ssf-ret5-val">--</b></div>
+                <div><span class="muted">Fut→Cash Lead</span><b id="ssf-lead5-val">--</b></div>
+                <div><span class="muted">Basis Dev</span><b id="ssf-basis-val">--</b></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Why Did Flagship LightGBM Predict This?</h2>
+                <p class="card-sub">Real-time TreeSHAP attribution computed by the FastAPI server (46f +SSF · 10s/20s)</p>
+              </div>
+              <div class="head-controls">
+                <div class="speed-group" id="shap-ver-toggle" role="group" aria-label="TreeSHAP model version">
+                  <button class="btn-chip active" data-ver="flagship">★ Flagship (46f)</button>
+                  <button class="btn-chip" data-ver="v2">v2 (38f)</button>
+                  <button class="btn-chip" data-ver="v1">v1 (25f)</button>
+                </div>
+                <span class="mono tag tag-green" id="live-shap-latency">-- µs</span>
+              </div>
+            </div>
+            <div class="shap-focus-row" id="replay-shap-summary"></div>
+            <div id="replay-shap-bars" class="shap-list"></div>
+          </div>
+        </div>
+
+        <!-- Right column: Mid-price chart + 6-model race -->
+        <div class="col-stack">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Mid-Price Trajectory &amp; 20 s Ground-Truth Outcome</h2>
+                <p class="card-sub">90 s causal history, prediction timestamp t, and actual movement over [t, t + 20 s]</p>
+              </div>
+              <div id="outcome-pill" class="outcome-pill">--</div>
+            </div>
+            <div class="canvas-wrap canvas-price">
+              <canvas id="canvas-price"></canvas>
+            </div>
+            <div class="chart-foot">
+              <span>Target Horizon: <b>k = 20 s</b> (5 s trailing smooth)</span>
+              <span class="mono" id="chart-move-detail">Realised Δmid(20s): --</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>★ Flagship Hybrid (46f +SSF·MH+TLOB) &amp; Model Race</h2>
+                <p class="card-sub">Live comparison: 46f Cross-Market Multi-Horizon Flagship vs cash-only v2 (38f), v1 (25f), &amp; neural nets</p>
+              </div>
+              <span class="mono tag" id="truth-badge">True Label: --</span>
+            </div>
+            <div class="step-diag-banner" id="step-diagnosis-banner">
+              <span class="diag-pill" id="diag-badge">Analyzing...</span>
+              <span id="diag-headline">Loading microstructure explanation for this timestamp...</span>
+            </div>
+            <div id="model-race-list" class="race-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Full-Day (6.25h) & All 12 Held-Out Test Days Session Explorer -->
+      <div class="card" id="day-explorer-card">
+        <div class="card-head">
+          <div>
+            <h2>Full-Day (6.25 h) &amp; 12-Test-Day Session Explorer (<span id="day-exp-sym">RELIANCE</span>)</h2>
+            <p class="card-sub">Inspect Flagship Hybrid (v2 + SSF + 10s/20s Avg + TLOB) across 15 m, 1 h, 3 h, Entire Trading Days, or All 12 Held-Out Days (~268k s)</p>
+          </div>
+          <div class="head-controls">
+            <select id="day-select" class="select-clean" aria-label="Select held-out test day"></select>
+            <div class="speed-group" id="day-window-group" role="group" aria-label="Session window size">
+              <button class="btn-chip" data-win="900">15m</button>
+              <button class="btn-chip" data-win="3600">1h</button>
+              <button class="btn-chip" data-win="10800">3h</button>
+              <button class="btn-chip active" data-win="22500">Full Day (6.25h)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="day-controls-sub">
+          <div id="day-offset-wrap" class="day-offset-wrap hidden">
+            <span class="muted">Window Start:</span>
+            <input type="range" id="day-offset-slider" min="0" max="21600" step="300" value="0" class="slider" style="max-width:260px;" />
+            <span class="mono muted" id="day-window-span">09:15–15:30 IST</span>
+          </div>
+          <div class="day-smooth-wrap">
+            <span class="muted">Prediction Smoothing vs Live:</span>
+            <div class="speed-group" id="day-smooth-group" role="group" aria-label="Prediction averaging window">
+              <button class="btn-chip active" data-smooth="1">Live (N=1)</button>
+              <button class="btn-chip" data-smooth="10">Avg 10</button>
+              <button class="btn-chip" data-smooth="20">Avg 20</button>
+              <button class="btn-chip" data-smooth="50">Avg 50</button>
+              <button class="btn-chip" data-smooth="100">Avg 100</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="batch-kpi-row">
+          <div class="kpi-mini"><span>Window Dir Hit (Live)</span><b class="mono" id="day-stat-hit">--</b></div>
+          <div class="kpi-mini"><span>High-Conv Hit (p≥0.55)</span><b class="mono" id="day-stat-hc">--</b></div>
+          <div class="kpi-mini"><span>Batch-10 Majority Win</span><b class="mono" id="day-stat-b10">--</b></div>
+          <div class="kpi-mini"><span>Batch-20 Majority Win</span><b class="mono" id="day-stat-b20">--</b></div>
+          <div class="kpi-mini"><span>Batch-50 Majority Win</span><b class="mono" id="day-stat-b50">--</b></div>
+          <div class="kpi-mini"><span>Batch-100 Majority Win</span><b class="mono" id="day-stat-b100">--</b></div>
+        </div>
+
+        <div class="canvas-wrap canvas-day-session">
+          <canvas id="canvas-day-session"></canvas>
+        </div>
+        <p class="card-note" id="day-session-note"></p>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 2: MODEL SANDBOX ==================== -->
+    <section id="view-sandbox" class="view">
+      <div class="card sandbox-header">
+        <div>
+          <h2>Interactive Order-Book Sandbox (Live Deployed Inference)</h2>
+          <p class="card-sub">Adjust resting supply, demand, spread, and order flow—every slider calls the live LightGBM + Block PCA + Logistic Regression + TreeSHAP API.</p>
+        </div>
+        <div class="sandbox-controls-top">
+          <div class="instrument-pills" id="sandbox-model-pills"></div>
+        </div>
+      </div>
+
+      <div class="preset-strip">
+        <span class="muted">Quick Scenarios:</span>
+        <button class="btn-chip" data-preset="ssf_sweep">🚀 Futures Sweep Leads Cash (+SSF)</button>
+        <button class="btn-chip" data-preset="buyer">Strong Buyer Wall</button>
+        <button class="btn-chip" data-preset="seller">Aggressive Seller Sweep</button>
+        <button class="btn-chip" data-preset="wide">Wide 3-Tick Spread</button>
+        <button class="btn-chip" data-preset="closing_freeze">🕒 15:22 IST Closing Freeze Trap</button>
+        <button class="btn-chip" data-preset="balanced">Balanced Neutral Book</button>
+      </div>
+
+      <div class="grid-sandbox">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Order-Book &amp; Cross-Market Futures Controls</h2>
+              <p class="card-sub">Synthesises a real 5-level book &amp; computes all 25 core + 13 v2 + 8 SSF Futures features (46f)</p>
+            </div>
+          </div>
+          <div class="sliders-grid">
+            <label class="slider-item">
+              <div class="slider-top"><span>Best Bid Queue Multiplier (L1 Demand)</span><b class="mono" id="val-bid-l1">1.0×</b></div>
+              <input type="range" id="sb-bid-l1" min="0.2" max="4.5" step="0.1" value="1.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Best Ask Queue Multiplier (L1 Supply)</span><b class="mono" id="val-ask-l1">1.0×</b></div>
+              <input type="range" id="sb-ask-l1" min="0.2" max="4.5" step="0.1" value="1.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Deeper Book Skew (Levels 2–5 Demand vs Supply)</span><b class="mono" id="val-deep">0.0</b></div>
+              <input type="range" id="sb-deep" min="-0.7" max="1.2" step="0.05" value="0.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Quoted Spread (ticks)</span><b class="mono" id="val-spread">1 tick</b></div>
+              <input type="range" id="sb-spread" min="1" max="5" step="1" value="1" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Order Flow Impulse (OFI σ, last second)</span><b class="mono" id="val-ofi">0.0 σ</b></div>
+              <input type="range" id="sb-ofi" min="-2.8" max="2.8" step="0.1" value="0.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Causal Lag Persistence (1s / 2s / 5s trend)</span><b class="mono" id="val-lag">0.70</b></div>
+              <input type="range" id="sb-lag" min="0.0" max="1.0" step="0.05" value="0.7" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Flow Toxicity (VPIN training percentile)</span><b class="mono" id="val-vpin">50%</b></div>
+              <input type="range" id="sb-vpin" min="0.1" max="0.9" step="0.05" value="0.5" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>30s Prior Trend (ticks, v2 Multi-Scale)</span><b class="mono" id="val-drift">0.0t</b></div>
+              <input type="range" id="sb-drift" min="-10.0" max="10.0" step="0.5" value="0.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Realised Volatility Percentile (v2 Regime)</span><b class="mono" id="val-vol">50%</b></div>
+              <input type="range" id="sb-vol" min="0.0" max="0.95" step="0.05" value="0.5" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Trading Session Clock (09:15 → 15:30 IST)</span><b class="mono" id="val-clock">12:03 IST</b></div>
+              <input type="range" id="sb-clock" min="0.05" max="0.98" step="0.01" value="0.45" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Futures Book Imbalance (+SSF L1 Skew)</span><b class="mono" id="val-ssf-imb">0.00</b></div>
+              <input type="range" id="sb-ssf-imb" min="-0.90" max="0.90" step="0.05" value="0.0" class="slider" />
+            </label>
+            <label class="slider-item">
+              <div class="slider-top"><span>Futures→Cash 5s Lead &amp; Basis (σ)</span><b class="mono" id="val-ssf-lead">0.0 σ</b></div>
+              <input type="range" id="sb-ssf-lead" min="-2.8" max="2.8" step="0.1" value="0.0" class="slider" />
+            </label>
+          </div>
+          <div class="mini-ladder-wrap">
+            <div class="mini-ladder-title">Synthesised 5-Level Book Preview (<span id="sb-mid-readout">--</span>)</div>
+            <div id="sb-ladder" class="ob-ladder ob-ladder-compact"></div>
+          </div>
+        </div>
+
+        <div class="col-stack">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Live Model Predictions (Flagship 46f vs v2 38f vs v1 25f)</h2>
+                <p class="card-sub">Try "Futures Sweep Leads Cash (+SSF)" to watch Flagship react while cash-only models stay flat</p>
+              </div>
+              <span class="mono tag tag-green" id="sb-latency">-- µs</span>
+            </div>
+            <div class="pred-compare-3">
+              <div class="pred-box pred-box-hi" id="sb-flag-box">
+                <div class="pred-model-name">★ Flagship (46f +SSF·MH)</div>
+                <div class="pred-verdict mono" id="sb-flag-verdict">--</div>
+                <div class="prob-bars" id="sb-flag-bars"></div>
+              </div>
+              <div class="pred-box" id="sb-v2-box">
+                <div class="pred-model-name">LightGBM v2 (38f Cash)</div>
+                <div class="pred-verdict mono" id="sb-v2-verdict">--</div>
+                <div class="prob-bars" id="sb-v2-bars"></div>
+              </div>
+              <div class="pred-box" id="sb-lgb-box">
+                <div class="pred-model-name">LightGBM v1 (25f Base)</div>
+                <div class="pred-verdict mono" id="sb-lgb-verdict">--</div>
+                <div class="prob-bars" id="sb-lgb-bars"></div>
+              </div>
+            </div>
+            <p class="card-note sandbox-lr-note" id="sb-lr-line">Logistic Regression (Tier 1 Linear): --</p>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>Live 46f Multi-Horizon TreeSHAP Push</h2>
+                <p class="card-sub">Real-time additive Shapley contributions (10s+20s) explaining ★ Flagship LightGBM</p>
+              </div>
+              <span class="mono tag" id="sb-focus-tag">--</span>
+            </div>
+            <div id="sb-shap-bars" class="shap-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3B: ERROR ANATOMY & V2 UPGRADE ==================== -->
+    <section id="view-diagnostics" class="view">
+      <div class="kpi-grid-4">
+        <div class="card kpi-card">
+          <div class="kpi-label"><span style="text-transform:none">±α</span> Boundary Error Share</div>
+          <div class="kpi-val mono">62%–88%</div>
+          <div class="kpi-note">Most "errors" are Flat-vs-Move boundary calls, not UP↔DOWN reversals</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">LGBM × TLOB Oracle Union</div>
+          <div class="kpi-val mono">63%–74%</div>
+          <div class="kpi-note">Trees &amp; Transformers disagree ~50% of seconds, covering blind spots</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">Flagship Hybrid Lift</div>
+          <div class="kpi-val mono">+6.23 pp</div>
+          <div class="kpi-note">Unseen 22: 0.442 → 0.504 · RELIANCE: 0.454 → 0.516 w/ SSF+MH+TLOB</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">Selective High-Conviction</div>
+          <div class="kpi-val mono">80.7% → 89.4%</div>
+          <div class="kpi-note">RELIANCE accuracy when abstaining during noisy equilibrium</div>
+        </div>
+      </div>
+
+      <div class="control-strip card">
+        <div>
+          <h2 style="margin:0;">Why Models Err, Why TLOB &amp; LightGBM Differ, and How v2 Fixed Both</h2>
+          <p class="card-sub">Audited out-of-sample across 805,714 held-out test seconds (4 walk-forward segments × 3 NSE benchmarks)</p>
+        </div>
+        <div class="instrument-pills" id="diag-symbol-pills"></div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Error &amp; Disagreement Anatomy (<span id="diag-sym-title">RELIANCE</span>)</h2>
+              <p class="card-sub">Every second split by whether LightGBM v1 and TLOB got the true 20 s move right</p>
+            </div>
+            <span class="mono tag" id="diag-union-tag">Union: --</span>
+          </div>
+          <div class="diag-section-lbl">Baseline LightGBM v1 × TLOB Agreement Split</div>
+          <div id="diag-agree-bar" class="agree-stack"></div>
+          <div id="diag-agree-legend" class="agree-legend"></div>
+
+          <div class="diag-section-lbl" style="margin-top:14px;">What Type of Errors Does LightGBM Make?</div>
+          <div id="diag-err-split-bar" class="err-split-stack"></div>
+          <div id="diag-err-caption" class="card-note" style="margin-top:6px;"></div>
+
+          <div class="table-wrap" style="margin-top:12px;">
+            <table class="data-table" id="diag-bucket-table">
+              <thead>
+                <tr>
+                  <th>Regime Bucket</th>
+                  <th class="num">|r₂₀ₛ|/α</th>
+                  <th class="num">Near ±α %</th>
+                  <th class="num">30s Drift</th>
+                  <th class="num">10s Vol</th>
+                  <th class="num">1s Flip %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Step-by-Step Out-of-Sample Upgrade</h2>
+              <p class="card-sub">Strict train/val/test fits + Leave-One-Segment-Out TLOB blending</p>
+            </div>
+            <div class="speed-group" id="diag-metric-toggle">
+              <button class="btn-chip active" data-metric="macro_f1">Macro-F1</button>
+              <button class="btn-chip" data-metric="roc_auc_ovr">ROC-AUC</button>
+            </div>
+          </div>
+          <div class="canvas-wrap canvas-upgrade">
+            <canvas id="canvas-upgrade"></canvas>
+          </div>
+          <p class="card-note" id="diag-upgrade-note"></p>
+        </div>
+      </div>
+
+      <div class="grid-diag-bottom">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Why Average Accuracy Looks Low (~46%): Selective Conviction Curve</h2>
+              <p class="card-sub">Most seconds are balanced noise; filtering by Hybrid Ensemble max probability unlocks 74–89% precision</p>
+            </div>
+          </div>
+          <div class="canvas-wrap canvas-conviction">
+            <canvas id="canvas-conviction"></canvas>
+          </div>
+          <p class="card-note" id="diag-conv-note"></p>
+        </div>
+
+        <div class="col-stack">
+          <div class="card">
+            <h3>1. Why Wrong on Average? (±α Noise + Closing Stall)</h3>
+            <p class="body-copy">Over <b>62%–88%</b> of errors occur right next to the <code>±α</code> dead-zone boundary (<code>|r₂₀ₛ|/α ≈ 1.2×</code> vs <code>2.7×</code> when correct). Adding volatility also fixed a hidden <b>late-day freeze bug</b> (~15:15–15:30 IST zero-volatility queues), lifting accuracy from <code>53.4% → 84.8%</code> on RELIANCE and <code>46.4% → 73.5%</code> on IDEA.</p>
+          </div>
+          <div class="card">
+            <h3>2. Why TLOB Wins vs Why LightGBM Wins</h3>
+            <p class="body-copy"><b>TLOB wins (17–19% solo)</b> during calmer, lower-volatility buildup where baseline LightGBM only saw <code>5 s</code> of lags vs TLOB's <code>100 s</code> attention window. <b>LightGBM wins (19–25% solo)</b> when L1 order flow flips suddenly (<code>32.3%</code> imbalance reversals vs TLOB inertia) or during price rallies.</p>
+          </div>
+          <div class="card">
+            <h3>3. How Multi-Scale v2 + SSF + Hybrid Solved Both</h3>
+            <p class="body-copy">Giving LightGBM <b>13 causal 10s–60s flow/volatility/clock features + 8 Single-Stock Futures (SSF) features + 10s/20s horizon averaging</b> pushes RELIANCE to <b>0.516 F1 / 0.708 AUC</b> with TLOB and wins on <b>25/25 NSE stocks</b>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Cross-Paradigm Ensembling (<span id="diag-ens-sym">RELIANCE</span> · K = 1..8)</h2>
+              <p class="card-sub">Leave-One-Segment-Out (LOSO) optimal subsets across Original-7 vs Upgraded-8 pools</p>
+            </div>
+            <span class="mono tag">Why K=3..4 Beats K=7..8</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="diag-ensemble-table">
+              <thead>
+                <tr>
+                  <th>Pool</th>
+                  <th class="num">K</th>
+                  <th class="num">Macro-F1</th>
+                  <th class="num">ROC-AUC</th>
+                  <th>Optimal Model Subset</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note" id="diag-ensemble-note"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Prediction Averaging N = 1..100 (<span id="diag-avg-sym">RELIANCE</span>)</h2>
+              <p class="card-sub">Trailing time smoothing adds lag (hurts), whereas multi-day Batch-of-N voting hits 89%–96%</p>
+            </div>
+            <span class="mono tag tag-green">12 Held-Out Full Days</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="diag-averaging-table">
+              <thead>
+                <tr>
+                  <th class="num">N</th>
+                  <th class="num">Trail Macro-F1</th>
+                  <th class="num">Trail Dir Hit</th>
+                  <th class="num">Conf≥0.50 Hit</th>
+                  <th class="num">Batch-N Win %</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note" id="diag-averaging-note"></p>
+        </div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Forensic Case Study: Irreducible Market Sweeps (IDEA · 09:28:31 IST)</h2>
+              <p class="card-sub">Why all 6 models predicted DOWN on Imb = -0.83 before an off-book ₹1.15 Cr sweep fired UP (+5.31 bp)</p>
+            </div>
+            <span class="mono tag" style="color:var(--amber)">Bayes Ceiling</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="diag-sweep-table">
+              <thead>
+                <tr>
+                  <th>Offset</th>
+                  <th class="num">Bid 1 (₹15.07)</th>
+                  <th class="num">Ask 1 (₹15.08)</th>
+                  <th class="num">Tot Buy / Sell</th>
+                  <th>Tape Reconstruction</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="mono">t - 10s</td><td class="num">419,189</td><td class="num">161,569</td><td class="num">25.2M / 55.1M</td><td>Passive bid support erodes</td></tr>
+                <tr><td class="mono">t - 8s</td><td class="num">53,549</td><td class="num">349,117</td><td class="num">25.0M / 55.3M</td><td>Buyer sweeps 72,615 sh @ ₹15.08</td></tr>
+                <tr class="selected"><td class="mono"><b>t + 0s</b></td><td class="num"><b>34,467</b></td><td class="num"><b>382,983</b></td><td class="num"><b>25.0M / 55.5M</b></td><td><b>All 6 models DOWN (11× Ask wall, Imb -0.83)</b></td></tr>
+                <tr><td class="mono">t + 3s</td><td class="num">148,878</td><td class="num">348,508</td><td class="num">25.2M / 55.5M</td><td>Aggressive sweep hits 112,537 sh @ ₹15.08</td></tr>
+                <tr><td class="mono">t + 11s</td><td class="num">131,288</td><td class="num">310,459</td><td class="num">25.2M / 55.6M</td><td>Aggressive sweep hits 165,857 sh @ ₹15.08</td></tr>
+                <tr><td class="mono" style="color:var(--up)"><b>t + 19s</b></td><td class="num">151,113 (@15.09)</td><td class="num">746,132 (@15.10)</td><td class="num">26.0M / 54.7M</td><td><b style="color:var(--up)">Single 481,514-sh sweep (~₹72.7L) clears ₹15.08 &amp; ₹15.09</b></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="card-note">Institutional buyers stay off passive cash quotes, hiding <b>759,908 sh (₹1.15 Cr)</b> until execution—while <b>8 causal Single-Stock Futures (SSF → Cash) features</b> capture cross-market sweeps beforehand (<b>12/12</b> SSF equities improved).</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Nonparametric Anti-Overfitting Tests (Wilcoxon &amp; Sign Test)</h2>
+              <p class="card-sub">Frozen recipes (zero per-stock tuning) evaluated on all 25 stocks &amp; strictly unseen cohorts</p>
+            </div>
+            <span class="mono tag tag-green">p ≤ 9.8×10⁻⁴</span>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="diag-stat-table">
+              <thead>
+                <tr>
+                  <th>Comparison</th>
+                  <th>Cohort</th>
+                  <th class="num">Wins</th>
+                  <th class="num">Before → After</th>
+                  <th class="num">Wilcoxon p</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="card-note">Gains on the <b>22 strictly unseen stocks (+6.23 pp F1)</b> actually exceed the 3 dev stocks—confirming zero overfitting, with <b>300 / 300</b> full held-out trading days beating 55% directional hit rate (min day: 58.84%).</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>Out-of-Universe Anti-Overfitting Verification (25 NSE Instruments · 36.0M Rows)</h2>
+            <p class="card-sub">Frozen v2 (38f) + Multi-Horizon (10s, 20s) + SSF (8f) recipes tested unchanged on 22 unseen stocks &amp; 10 unseen SSF equities</p>
+          </div>
+          <div class="head-controls">
+            <span class="tag tag-green mono">All 25/25 Wins (p = 2.98×10⁻⁸)</span>
+            <span class="tag tag-green mono">Unseen 22/22 (+6.23 pp F1)</span>
+            <span class="tag mono">SSF 12/12 (p = 2.44×10⁻⁴)</span>
+            <span class="tag mono">300/300 Full Days &gt;55% Hit</span>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="diag-regime-table">
+            <thead>
+              <tr>
+                <th>Tick Regime</th>
+                <th class="num">Stocks</th>
+                <th class="num">Boundary Err %</th>
+                <th class="num">Baseline v1 F1</th>
+                <th class="num">v2+MH F1</th>
+                <th class="num">Best (+SSF) F1</th>
+                <th class="num">ΔF1</th>
+                <th class="num">v1 → Best AUC</th>
+                <th class="num">Batch-100 Win %</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3C: ML EVALUATION & AUDIT ==================== -->
+    <section id="view-mlaudit" class="view">
+      <div class="kpi-grid-4">
+        <div class="card kpi-card">
+          <div class="kpi-label">25-Stock Class Health (&gt;0.20)</div>
+          <div class="kpi-val mono" id="mlaudit-kpi-health">25 / 25 ✓</div>
+          <div class="kpi-note" id="mlaudit-kpi-health-note">Lowest per-class F1 across all 25 stocks: 0.384 (vs 0.20 collapse rule)</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">3-Class Target Priors</div>
+          <div class="kpi-val mono" id="mlaudit-kpi-priors">~33/33/33%</div>
+          <div class="kpi-note" id="mlaudit-kpi-priors-note">Balanced on liquid ticks; 69.4% FLAT on discrete 7.4 bp tick (IDEA)</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">Calibration &amp; Log-Loss</div>
+          <div class="kpi-val mono" id="mlaudit-kpi-calib">0.967 LL</div>
+          <div class="kpi-note" id="mlaudit-kpi-calib-note">Strict gain over uniform ln(3)=1.099 · RELIANCE 10-bin ECE = 0.0056</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">Val-to-Test Generalization</div>
+          <div class="kpi-val mono" id="mlaudit-kpi-gap">+0.0045 Gap</div>
+          <div class="kpi-note" id="mlaudit-kpi-gap-note">Near-zero val→test shift across 4 × 16d splits w/ early stopping</div>
+        </div>
+      </div>
+
+      <div class="control-strip card">
+        <div>
+          <h2 style="margin:0;">Complete ML Evaluation &amp; Per-Class Health Audit</h2>
+          <p class="card-sub">Full 3-class priors, classification reports, confusion matrices, calibration (LogLoss/Brier/ECE), generalization gaps, &amp; v2+SSF TreeSHAP</p>
+        </div>
+        <div class="instrument-pills" id="mlaudit-symbol-pills"></div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>3-Class Target Distributions (<span id="mlaudit-dist-sym">RELIANCE</span>)</h2>
+              <p class="card-sub">Split stability across Train (44d), Validation (8d), Test (12d) &amp; individual held-out Segments 0–3</p>
+            </div>
+            <span class="mono tag" id="mlaudit-alpha-tag">α = 0.56 bp</span>
+          </div>
+          <div class="diag-section-lbl">Held-Out Test Class Share (FLAT / UP / DOWN)</div>
+          <div id="mlaudit-dist-bar" class="agree-stack"></div>
+          <div id="mlaudit-dist-legend" class="agree-legend"></div>
+          <div class="table-wrap" style="margin-top:12px;">
+            <table class="data-table" id="mlaudit-dist-table">
+              <thead>
+                <tr>
+                  <th>Split / Segment</th>
+                  <th class="num">Rows (N)</th>
+                  <th class="num">FLAT %</th>
+                  <th class="num">UP %</th>
+                  <th class="num">DOWN %</th>
+                  <th class="num">α (bp)</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>3 × 3 Confusion Matrix (<span id="mlaudit-cm-sym">RELIANCE</span>)</h2>
+              <p class="card-sub">True labels vs predictions (count, row recall %, &amp; column precision %)</p>
+            </div>
+            <div class="speed-group" id="mlaudit-cm-model-pills"></div>
+          </div>
+          <div id="mlaudit-cm-grid" class="cm-grid-3x3"></div>
+          <p class="card-note" id="mlaudit-cm-note" style="margin-top:10px;"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>Per-Class <code>classification_report</code> &amp; Imbalance-Robust Leaderboard (<span id="mlaudit-rep-sym">RELIANCE</span>)</h2>
+            <p class="card-sub">Separate FLAT / UP / DOWN F1 scores + Precision/Recall, 4-segment Std, Balanced Acc, MCC, PR-AUC, LogLoss, Brier &amp; ECE</p>
+          </div>
+          <span class="mono tag tag-green" id="mlaudit-rep-count">-- models</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="mlaudit-report-table">
+            <thead>
+              <tr>
+                <th>Tier</th>
+                <th>Model</th>
+                <th class="num">FLAT F1 (P/R)</th>
+                <th class="num">UP F1 (P/R)</th>
+                <th class="num">DOWN F1 (P/R)</th>
+                <th>Health (&gt;0.20)</th>
+                <th class="num">Macro-F1 ± Std</th>
+                <th class="num">Wtd-F1</th>
+                <th class="num">Acc</th>
+                <th class="num">Bal Acc</th>
+                <th class="num">MCC</th>
+                <th class="num">ROC-AUC</th>
+                <th class="num">PR-AUC</th>
+                <th class="num">LogLoss</th>
+                <th class="num">Brier</th>
+                <th class="num">ECE</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Train → Val → Test Generalization &amp; Early Stopping</h2>
+              <p class="card-sub">Auditing tree overfit gap &amp; optimal boosting iterations across Segments 0–3</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" id="mlaudit-gen-table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th class="num">Train F1</th>
+                  <th class="num">Val F1</th>
+                  <th class="num">Test F1</th>
+                  <th class="num">Val–Test Gap</th>
+                  <th class="num">Train→Test LL</th>
+                  <th class="num">Best Iter</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <h3 style="margin-top:16px;">Model Complexity, Windows &amp; Inference Latency</h3>
+          <div class="table-wrap" style="margin-top:6px;">
+            <table class="data-table" id="mlaudit-complexity-table">
+              <thead>
+                <tr>
+                  <th>Tier / Model</th>
+                  <th>Input Window</th>
+                  <th>Normalization &amp; Hyperparams</th>
+                  <th class="num">Median Latency</th>
+                </tr>
+              </thead>
+              <tbody id="mlaudit-complexity-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>Upgraded Feature Attribution: TreeSHAP &amp; Split Gain (<span id="mlaudit-imp-sym">RELIANCE</span>)</h2>
+              <p class="card-sub">Mean |TreeSHAP| share across 8,000 test seconds vs LightGBM split gain</p>
+            </div>
+            <span class="mono tag" id="mlaudit-imp-model">LightGBM v2 + SSF</span>
+          </div>
+          <div id="mlaudit-imp-bars" class="trap-bars"></div>
+          <div class="checklist-mini">
+            <span>✓ <b>1. Class Priors:</b> Split-level F/U/D %</span>
+            <span>✓ <b>2. Sanity Floor:</b> Uniform &amp; Stratified</span>
+            <span>✓ <b>3. Per-Class F1:</b> All 25 stocks &gt;0.38</span>
+            <span>✓ <b>4. Confusion Matrix:</b> Count + R/P %</span>
+            <span>✓ <b>5. Imbalance Metrics:</b> MCC, κ, BalAcc</span>
+            <span>✓ <b>6. Calibration:</b> LogLoss, Brier, ECE</span>
+            <span>✓ <b>7. Gen. Gap:</b> Train/Val/Test + EarlyStop</span>
+            <span>✓ <b>8. Reproducibility:</b> Fold Std + Params</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 3: ML FINDINGS & ARENA ==================== -->
+    <section id="view-arena" class="view">
+      <div class="kpi-grid-4">
+        <div class="card kpi-card">
+          <div class="kpi-label">Total Empirical Scale</div>
+          <div class="kpi-val mono">43.0M</div>
+          <div class="kpi-note">Snapshots across 6 datasets (36.0M Indian NSE)</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">C++ Tree Inference</div>
+          <div class="kpi-val mono">10.5 µs</div>
+          <div class="kpi-note">230–540× faster than GPU DeepLOB (0.0 diff)</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">NSE Tick-Size Law</div>
+          <div class="kpi-val mono">r = +0.80</div>
+          <div class="kpi-note">5 s ROC-AUC from 0.72 to 0.84 (p &lt; 10⁻⁵)</div>
+        </div>
+        <div class="card kpi-card">
+          <div class="kpi-label">Leakage Hygiene Tests</div>
+          <div class="kpi-val mono">43 / 43</div>
+          <div class="kpi-note">Whole-day resets, purged CV &amp; shuffled control</div>
+        </div>
+      </div>
+
+      <div class="grid-arena-top">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>The Accuracy Trap (IDEA Stock, 69.4% FLAT)</h2>
+              <p class="card-sub">Toggle between Plain Accuracy and Macro-F1 / ROC-AUC to see why balanced metrics matter</p>
+            </div>
+            <div class="speed-group" id="trap-toggle">
+              <button class="btn-chip active" data-trap="acc">Plain Accuracy (Misleading)</button>
+              <button class="btn-chip" data-trap="f1">Macro-F1 &amp; U/D AUC (Honest)</button>
+            </div>
+          </div>
+          <div id="trap-bars" class="trap-bars"></div>
+          <p class="card-note" id="trap-caption"></p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>5-Stage Feature Ablation (Overfitting Proof)</h2>
+              <p class="card-sub">Adding clean features helps (A → D), while 5 noisy NSE columns (Stage E) drop F1 on 6/8 stocks</p>
+            </div>
+          </div>
+          <div class="ablation-stepper" id="ablation-stepper">
+            <button class="btn-chip active" data-stage="A">A: Spread (1)</button>
+            <button class="btn-chip" data-stage="B">B: L1 (4)</button>
+            <button class="btn-chip" data-stage="C">C: +Lags (13)</button>
+            <button class="btn-chip" data-stage="D">D: +L2-5 &amp; PCA (25)</button>
+            <button class="btn-chip" data-stage="E">E: +Noisy NSE (30)</button>
+          </div>
+          <div id="ablation-bars" class="trap-bars"></div>
+          <p class="card-note" id="ablation-note"></p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>Cross-Benchmark Model Ladder &amp; History-vs-Architecture Crossover</h2>
+            <p class="card-sub">Switch benchmark to compare LightGBM against LSTM, DeepLOB / DeepLOB5, and TLOB (with 95% Block-Bootstrap CI note)</p>
+          </div>
+          <div class="instrument-pills" id="arena-dataset-pills"></div>
+        </div>
+        <div class="canvas-wrap canvas-ladder">
+          <canvas id="canvas-ladder"></canvas>
+        </div>
+        <p class="card-note" id="arena-ladder-note"></p>
+      </div>
+
+      <div class="grid-explain-3">
+        <div class="card">
+          <h3>Two-Branch ML Architecture</h3>
+          <p class="card-sub">Aligned apples-to-apples evaluation</p>
+          <p class="body-copy">Branch A feeds <b>25–27 strictly causal engineered features</b> to CPU models (Logistic Regression, Random Forest, LightGBM + 10.5 µs C++). Branch B feeds raw <b>100 × 20/40 windows</b> into GPU neural nets (LSTM, CNN+Inception DeepLOB5, TLOB Transformer). Both predict identical held-out timestamps.</p>
+        </div>
+        <div class="card">
+          <h3>Why Block PCA on Order Flow?</h3>
+          <p class="card-sub">Targeted factor extraction without mixing units</p>
+          <p class="body-copy">Instead of squashing unrelated features together, we fit mean-centred <b>Block PCA strictly on Training multi-level OFI</b> (extracting PC1–PC3). On 10-level Bitcoin it compresses levels 6–10; on 5-level NSE it adds rotated combinations (80.5% variance on RELIANCE) so axis-aligned trees make oblique-like splits.</p>
+        </div>
+        <div class="card">
+          <h3>Covariate Shift Resilience</h3>
+          <p class="card-sub">NIFTY Segment 3 (+10.7% price rally)</p>
+          <p class="body-copy">When prices rallied from ₹22,540 (Train) to ₹24,949 (Test), static scaling pushed raw inputs out of distribution, dropping <b>LSTM (0.184)</b> and <b>DeepLOB5 (0.197)</b> to coin-flip AUC (0.50). <b>TLOB (+ BiN, 0.439)</b> and ratio-based <b>LightGBM (0.432)</b> survived with zero drop.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW 4: 25-STOCK NSE EXPLORER ==================== -->
+    <section id="view-universe" class="view">
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>The Indian NSE Tick-Size Predictability Law (25 Instruments · 36.0M Rows)</h2>
+            <p class="card-sub">5-second LightGBM ROC-AUC scales log-linearly with relative price step (r = +0.80, Spearman ρ = +0.77, p = 1.9×10⁻⁶)</p>
+          </div>
+          <div class="universe-actions">
+            <button class="btn-chip" id="btn-highlight-250">★ Highlight ₹250 Jump (ONGC vs ITC)</button>
+            <select id="sector-filter" class="select-clean" aria-label="Filter by sector"></select>
+          </div>
+        </div>
+
+        <div class="grid-universe">
+          <div class="canvas-wrap canvas-scatter">
+            <canvas id="canvas-scatter"></canvas>
+          </div>
+          <div class="stock-inspector card-inset" id="stock-inspector"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div>
+            <h2>All 25 Indian NSE Benchmarks (64 Regular Trading Days Each)</h2>
+            <p class="card-sub">Click any row or scatter point to inspect queue structure, ML predictability, and spread crossing cost</p>
+          </div>
+          <span class="mono tag" id="universe-count-tag">25 symbols</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table" id="universe-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Sector</th>
+                <th class="num">Mid (₹)</th>
+                <th class="num">Tick (bp)</th>
+                <th class="num">1-Tick %</th>
+                <th class="num">Med Q1</th>
+                <th class="num">5s AUC</th>
+                <th class="num">20s v1 F1</th>
+                <th class="num">Upgraded F1 (+Δ)</th>
+                <th class="num">Batch-100 Win</th>
+                <th class="num">Gross (bp)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>UML501 · Machine Learning Project Deployment</span>
+    <span>Aarav Singhal (1024030539) &amp; Sharan Sharma (1024030511) · Guided by Dr. Sanju Kumari</span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

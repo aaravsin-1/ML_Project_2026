@@ -375,3 +375,4 @@ The practical recipe that falls out:
 5. Ntakaris, A., Magris, M., Kanniainen, J., Gabbouj, M., & Iosifidis, A. (2018). Benchmark Dataset for Mid-Price Forecasting of Limit Order Book Data with Machine Learning Methods. *Journal of Forecasting*, 37(8), 852–866.
 6. López de Prado, M. (2018). *Advances in Financial Machine Learning.* Wiley.
 7. Tran, D. T., Kanniainen, J., Gabbouj, M., & Iosifidis, A. (2021). Data Normalization for Bilinear Structures in High-Frequency Financial Time-Series. *ICPR 2020*.
+8. Gould, M. D., Porter, M. A., Williams, S., McDonald, M., Fenn, D. J., & Howison, S. D. (2013). Limit Order Books. *Quantitative Finance*, 13(11), 1709–1742. [PDF](https://www.math.ucla.edu/~mason/papers/gould-qf-final.pdf)

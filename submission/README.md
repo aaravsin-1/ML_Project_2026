@@ -9,4 +9,5 @@
 | File | What it is |
 |:---|:---|
 | `PROJECT_REPORT.md` | The final report |
+| `ADDITIONAL_EXPERIMENTS_AND_VERIFICATION.md` | Additional experiments & complete ML audit: error anatomy, IDEA shock forensics, K=1..8 ensembles, N=1..100 averaging, SSF->Cash, 25-stock verification, 3-class priors, per-class F1 reports, confusion matrices, calibration & generalization gaps |
 | `Final_Project_Notebook.ipynb` | The final notebook, executed, with every experiment documented. Rebuild it with `python scripts/build_final_notebook.py` |

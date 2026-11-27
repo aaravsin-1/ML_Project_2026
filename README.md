@@ -760,3 +760,4 @@ The model, feature and extension tests need PyTorch. The simulator and validatio
 4. **Zhang, Z., Zohren, S., & Roberts, S. (2019).** *DeepLOB: Deep Convolutional Neural Networks for Limit Order Books.* IEEE Transactions on Signal Processing, 67(11), 3001–3012.
 5. **López de Prado, M. (2018).** *Advances in Financial Machine Learning.* Wiley.
 6. **Tran, D. T., Kanniainen, J., Gabbouj, M., & Iosifidis, A. (2021).** *Data Normalization for Bilinear Structures in High-Frequency Financial Time-Series.* ICPR 2020.
+7. **Gould, M. D., Porter, M. A., Williams, S., McDonald, M., Fenn, D. J., & Howison, S. D. (2013).** *Limit Order Books.* Quantitative Finance, 13(11), 1709–1742. [PDF](https://www.math.ucla.edu/~mason/papers/gould-qf-final.pdf)
