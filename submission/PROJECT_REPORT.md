@@ -44,20 +44,24 @@ A limit order book is the list of all resting buy orders (bids) and sell orders 
 
 ### 1.2 Why accuracy alone is not enough
 
-I chose this topic because the final result depends on both halves together. For one round trip (enter, hold for horizon $h$, exit):
+I chose this topic because the final result depends on both halves together. For one round trip (enter, hold for horizon $`h`$, exit):
 
-$$\text{net edge} \;=\; \underbrace{E[\,s \cdot \Delta m_{t \to t+h}\,]}_{\text{accuracy}} \;-\; \underbrace{\big(E[s\,\Delta m_{t\to t+h}] - E[s\,\Delta m_{t+L \to t+L+h}]\big)}_{\text{latency } L} \;-\; \underbrace{c_{\text{cross}}}_{\text{spread, depth}} \;-\; \underbrace{2f}_{\text{fees}}$$
+$$
+\mathrm{net\ edge} \;=\; \underbrace{E\bigl[s \cdot \Delta m_{t \to t+h}\bigr]}_{\mathrm{accuracy}} \;-\; \underbrace{\Bigl(E\bigl[s\,\Delta m_{t\to t+h}\bigr] - E\bigl[s\,\Delta m_{t+L \to t+L+h}\bigr]\Bigr)}_{\mathrm{latency\ } L} \;-\; \underbrace{c_{\mathrm{cross}}}_{\mathrm{spread,\ depth}} \;-\; \underbrace{2f}_{\mathrm{fees}}
+$$
 
-where $s = \pm 1$ is the predicted direction and $\Delta m$ the mid-price change.
+where $`s = \pm 1`$ is the predicted direction and $`\Delta m`$ the mid-price change.
 - The **ML model** controls the first term.
 - The **system's speed** controls the second.
 - The **market and exchange** control the last two.
 
-If moves are roughly symmetric with average size $m$ and the model is right with probability $p$, the first term is about $(2p-1)\,m$. Breaking even after a total round-trip cost $C$ then needs a hit rate of
+If moves are roughly symmetric with average size $`m`$ and the model is right with probability $`p`$, the first term is about $`(2p-1)\,m`$. Breaking even after a total round-trip cost $`C`$ then needs a hit rate of:
 
-$$p^* \;=\; \tfrac{1}{2} + \frac{C}{2m}.$$
+$$
+p^* \;=\; \tfrac{1}{2} + \frac{C}{2m}
+$$
 
-This formula frames the whole report. Better models raise $p$, faster systems shrink $C$, and when $C > m$, no model can win at all.
+This formula frames the whole report. Better models raise $`p`$, faster systems shrink $`C`$, and when $`C > m`$, no model can win at all.
 
 ---
 
@@ -72,7 +76,7 @@ This formula frames the whole report. Better models raise $p$, faster systems sh
 | **Optiver Realized Volatility** | Kaggle 2021, 10-minute book/trade buckets | Full training set, 4 forward folds | Leakage case study |
 | **Optiver Trading at the Close** | Kaggle 2023, closing auction | 481 days (400 train / 81 holdout) | Regression on auction imbalance |
 
-**Tick size** matters for everything that follows. INTC and MSFT are *large-tick* stocks: the 1-cent tick is 3.3–3.7 bp of the price, the spread sits at one tick 77% of the time, and queues are deep. AAPL, AMZN and GOOG are *small-tick* stocks (0.17–0.45 bp). BTC is extremely small-tick: $0.01 on about $60,000, which is 0.0017 bp.
+**Tick size** matters for everything that follows. INTC and MSFT are *large-tick* stocks: the 1-cent tick is 3.3–3.7 bp of the price, the spread sits at one tick 77% of the time, and queues are deep. AAPL, AMZN and GOOG are *small-tick* stocks (0.17–0.45 bp). BTC is extremely small-tick: \$0.01 on about \$60,000, which is 0.0017 bp.
 
 ---
 
@@ -90,7 +94,7 @@ All features are causal: row $t$ uses only snapshots at or before $t$.
 - **Book snapshot:** spread in ticks; queue imbalance at levels 1, 3, 5 and 10; book slopes.
 - **Order Flow Imbalance (OFI):** Cont et al. (2014), the net change in buy minus sell pressure at the best quotes. Also multi-level OFI compressed by PCA, with the loadings fitted on training data.
 - **VPIN:** Easley et al. (2012), a volume-clock measure of how one-sided recent trading was ("toxicity").
-- **Micro-price deviation:** the imbalance-weighted mid minus the mid, $I \cdot \text{spread}/2$.
+- **Micro-price deviation:** the imbalance-weighted mid minus the mid, $`I \cdot \mathrm{spread}/2`$.
 - **Lags** of the level-1 signals, and per-level limit, market and cancel order flows (BTC and LOBSTER).
 
 ### 3.3 Models (tiers 0–5)
@@ -226,11 +230,11 @@ Validation design changes the conclusion, which is why §3.4 exists.
 
 | LightGBM on BTC, test windows | Net P&L |
 |:---|:---:|
-| Trading at the mid, no fees (what many papers report) | **+$8,055 ± 988** |
-| Aggressive taker: crosses the spread, 4 bp fee, 1 s latency | **−$36,394 ± 7,271** |
-| Passive maker with a VPIN gate, pessimistic fills | −$478 ± 776 |
+| Trading at the mid, no fees (what many papers report) | **+\$8,055 ± 988** |
+| Aggressive taker: crosses the spread, 4 bp fee, 1 s latency | **−\$36,394 ± 7,271** |
+| Passive maker with a VPIN gate, pessimistic fills | −\$478 ± 776 |
 
-Fees ($37.6k) are 4.7× the fantasy profit.
+Fees (\$37.6k) are 4.7× the fantasy profit.
 
 ### 5.2 Where exactly does the edge go?
 
@@ -250,14 +254,14 @@ Four findings:
 1. **Better accuracy doubles the edge.** Filtering to confident signals raises the hit rate from 61% to 72% and the edge from 1.0 to 2.2 bp.
 2. **Better signals are more latency-sensitive.** The one-second delay costs 0.27 bp on all signals but 0.75 bp on the top 2%. The most confident signals predict the moves that happen soonest, so waiting hurts them most. The 1 s here is the data's resolution, not a real system latency, but the direction of the effect is the point.
 3. **Without fees, confident signals do clear the bar** (72% hit rate against 70% needed). With a 1 bp fee they would need 94%.
-4. **At the real 4 bp taker fee, no accuracy is enough.** The average absolute 20 s move on these rows is 4.3 bp, so even a perfect forecast earns less than the 8 bp round-trip fee. In the language of §1.2: $C > m$, so $p^* > 1$.
+4. **At the real 4 bp taker fee, no accuracy is enough.** The average absolute 20 s move on these rows is 4.3 bp, so even a perfect forecast earns less than the 8 bp round-trip fee. In the language of §1.2: $`C > m`$, so $`p^* > 1`$.
 
 Splitting trades by regime (VPIN, spread, volatility terciles, 54 cells, Experiment G) finds no regime where the edge survives costs. The best cell earns +1.43 bp gross. The edge is most consistent in *calm* markets, not toxic ones.
 
 ### 5.3 Avoiding the spread: market making
 
 Posting passive orders earns the spread instead of paying it, but those orders tend to fill when the price moves against them ("adverse selection").
-- **BTC:** naive two-sided quoting loses about $10,400 a day, because there is no spread to earn (0.0017 bp). An adverse-selection model cuts the losses by 86% or more, but breaks even only under optimistic fills.
+- **BTC:** naive two-sided quoting loses about \$10,400 a day, because there is no spread to earn (0.0017 bp). An adverse-selection model cuts the losses by 86% or more, but breaks even only under optimistic fills.
 - **LOBSTER, large-tick stocks:** the outcome depends almost entirely on **queue position**. Measured 30 s after the fill:
 
 | Stock | Fill at the back of the queue | Fill at the front of the queue |
@@ -289,16 +293,16 @@ The C++ model reproduces LightGBM exactly: maximum absolute score difference 0, 
 
 | Added latency | 0 ms | 1 ms | 10 ms | 25 ms | 50 ms | 100 ms |
 |:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| LightGBM net P&L | $508 | $457 | $427 | $369 | $290 | $119 |
-| DeepLOB net P&L | $155 | $104 | $71 | $14 | −$76 | −$247 |
+| LightGBM net P&L | \$508 | \$457 | \$427 | \$369 | \$290 | \$119 |
+| DeepLOB net P&L | \$155 | \$104 | \$71 | \$14 | −\$76 | −\$247 |
 
 ### 6.2 What the evidence says
 
-**1. Costs set the bar, and no model clears an impossible bar.** On BTC as a taker, the round-trip cost (fees + spread + delay) is larger than the typical move, so the problem is not solvable by better ML. Neither is it solvable by lower latency: going from 1 s to 0 s latency improves the P&L by only about 5% (−$36.4k to −$34.5k). The first step is lowering costs: a lower fee tier, posting passively, or choosing an instrument where the typical move is large relative to the spread (large-tick stocks).
+**1. Costs set the bar, and no model clears an impossible bar.** On BTC as a taker, the round-trip cost (fees + spread + delay) is larger than the typical move, so the problem is not solvable by better ML. Neither is it solvable by lower latency: going from 1 s to 0 s latency improves the P&L by only about 5% (−\$36.4k to −\$34.5k). The first step is lowering costs: a lower fee tier, posting passively, or choosing an instrument where the typical move is large relative to the spread (large-tick stocks).
 
 **2. Once the bar can be cleared, accuracy matters most, until latency approaches the signal's horizon.**
-- In the synthetic sweep, LightGBM's lead over DeepLOB is about $350 at *zero* latency. It comes from better signals, not faster inference.
-- Both models lose about $4 per millisecond of latency, so DeepLOB's extra ~2.3 ms of inference costs only about $10.
+- In the synthetic sweep, LightGBM's lead over DeepLOB is about \$350 at *zero* latency. It comes from better signals, not faster inference.
+- Both models lose about \$4 per millisecond of latency, so DeepLOB's extra ~2.3 ms of inference costs only about \$10.
 - At these speeds, picking the more accurate model is worth 35 times more than picking the faster one.
 
 **3. Accuracy buys latency budget.** A model's profit runs out when the latency cost eats its edge. DeepLOB's smaller edge is gone by about 29 ms (a seventh of the 200 ms horizon). LightGBM's larger edge is still positive at 100 ms, half the horizon. The more accurate the model, the slower the system it can afford.
@@ -330,7 +334,7 @@ Putting it together, for a strategy with signal horizon $h$, system latency $L$ 
 - **Coarse BTC data.** With 1 s snapshots, the "1 s delay" is the data's resolution, not a system latency. Sub-second effects on BTC are invisible.
 - **Queue position is unobserved,** so passive fills are reported as bounds (pessimistic / queue / optimistic), not point estimates.
 - **No persistent price impact:** our orders walk the snapshot they arrive on, but do not deplete later snapshots.
-- **Synthetic latency sweep:** the generator plants the signal, so the $/ms figures show the mechanism, not real-market magnitudes. The test windows are short (about 90 s per seed), so the P&L is noisy.
+- **Synthetic latency sweep:** the generator plants the signal, so the \$/ms figures show the mechanism, not real-market magnitudes. The test windows are short (about 90 s per seed), so the P&L is noisy.
 - **C++ timings** were taken on a busy machine and are an upper bound. They cover inference only, not network or feed handling ("wire-to-order").
 - **Limited tuning** of the deep models: few epochs and little hyperparameter search.
 - **Many comparisons** in the regime study (54 cells), so only patterns that hold across segments and models are reported.

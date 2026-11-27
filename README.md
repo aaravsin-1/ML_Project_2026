@@ -141,36 +141,56 @@ python -m app.server --port 8050       # or double-click run_dashboard.bat
 ## Mathematical Foundations & Microstructure Signals
 
 ### 1. Limit Order Book Dynamics
-At event or snapshot time $t$, the top $M$ levels ($M = 5$ on NSE, $10$ on LOBSTER/FI-2010, $15$ on BTC) of the book are
-$$LOB(t) = \left\{ (p_m^a(t), q_m^a(t), p_m^b(t), q_m^b(t)) \right\}_{m=1}^M$$
-with spread $S(t) = p_1^a(t) - p_1^b(t)$ and mid-price $P_{\text{mid}}(t) = \tfrac{1}{2}(p_1^a(t) + p_1^b(t))$. All rolling windows, lags, returns, and basis demeanings reset cleanly at `09:15:00 IST` on NSE so signals never cross overnight gaps.
+At event or snapshot time $`t`$, the top $`M`$ levels ($`M = 5`$ on NSE, $`10`$ on LOBSTER/FI-2010, $`15`$ on BTC) of the book are:
+
+$$
+LOB(t) = \left\lbrace \bigl(p_m^a(t),\, q_m^a(t),\, p_m^b(t),\, q_m^b(t)\bigr) \right\rbrace_{m=1}^{M}
+$$
+
+with spread $`S(t) = p_1^a(t) - p_1^b(t)`$ and mid-price $`P_{\mathrm{mid}}(t) = \tfrac{1}{2}\bigl(p_1^a(t) + p_1^b(t)\bigr)`$. All rolling windows, lags, returns, and basis demeanings reset cleanly at `09:15:00 IST` on NSE so signals never cross overnight gaps.
 
 ### 2. Order Flow Imbalance (OFI & MLOFI)
-Following **Cont, Kukanov, and Stoikov (2014)**, the bid-side demand change is
-$$\Delta W(t) = \begin{cases} q_1^b(t), & p_1^b(t) > p_1^b(t-1) \\ q_1^b(t) - q_1^b(t-1), & p_1^b(t) = p_1^b(t-1) \\ -q_1^b(t-1), & p_1^b(t) < p_1^b(t-1) \end{cases}$$
-the ask-side supply change $\Delta V(t)$ is defined symmetrically, and $OFI(t) = \Delta W(t) - \Delta V(t)$. Following **Cont, Cucuringu, and Zhang (2023)**, **Multi-Level OFI** applies the same formula across deeper book levels and compresses the multi-level vector via **PCA fitted strictly on the training split** into `ofi_pca1..3`.
+Following **Cont, Kukanov, and Stoikov (2014)**, the bid-side demand change is:
+
+$$
+\Delta W(t) = \begin{cases}
+q_1^b(t), & p_1^b(t) > p_1^b(t-1) \\
+q_1^b(t) - q_1^b(t-1), & p_1^b(t) = p_1^b(t-1) \\
+-q_1^b(t-1), & p_1^b(t) < p_1^b(t-1)
+\end{cases}
+$$
+
+The ask-side supply change $`\Delta V(t)`$ is defined symmetrically, and $`OFI(t) = \Delta W(t) - \Delta V(t)`$. Following **Cont, Cucuringu, and Zhang (2023)**, **Multi-Level OFI** applies the same formula across deeper book levels and compresses the multi-level vector via **PCA fitted strictly on the training split** into `ofi_pca1..3`.
 
 ### 3. Volume-Synchronized Probability of Informed Trading (VPIN)
-Following **Easley, López de Prado, and O'Hara (2012)**, trades are grouped into buckets of constant volume $V$, and
-$$VPIN = \frac{\sum_{\tau=1}^N |V_\tau^B - V_\tau^S|}{N \times V}.$$
-VPIN is computed from trade volume / signed flow and mapped onto each snapshot strictly causally using only buckets completed at or before timestamp $t$.
+Following **Easley, López de Prado, and O'Hara (2012)**, trades are grouped into buckets of constant volume $`V`$, and:
+
+$$
+VPIN = \frac{\sum_{\tau=1}^{N} \left| V_\tau^B - V_\tau^S \right|}{N \times V}
+$$
+
+VPIN is computed from trade volume / signed flow and mapped onto each snapshot strictly causally using only buckets completed at or before timestamp $`t`$.
 
 ### 4. The Micro-Price Estimator
-Following **Stoikov (2018)**, with $I(t) = \frac{q_1^b - q_1^a}{q_1^b + q_1^a}$,
-$$P_{\text{micro}}(t) = \frac{q_1^b p_1^a + q_1^a p_1^b}{q_1^b + q_1^a} = P_{\text{mid}}(t) + \frac{I(t)}{2} S(t).$$
-The normalized deviation $P_{\text{micro}} - P_{\text{mid}}$ enters as a feature and serves as a standalone single-parameter large-tick benchmark in [Experiment K](#micro-price-as-a-target-experiment-k).
+Following **Stoikov (2018)**, with $`I(t) = \frac{q_1^b - q_1^a}{q_1^b + q_1^a}`$:
+
+$$
+P_{\mathrm{micro}}(t) = \frac{q_1^b p_1^a + q_1^a p_1^b}{q_1^b + q_1^a} = P_{\mathrm{mid}}(t) + \frac{I(t)}{2}\, S(t)
+$$
+
+The normalized deviation $`P_{\mathrm{micro}} - P_{\mathrm{mid}}`$ enters as a feature and serves as a standalone single-parameter large-tick benchmark in [Experiment K](#micro-price-as-a-target-experiment-k).
 
 ### 5. Spread Feature
-The spread enters as an integer number of ticks. An earlier version used relative spread $S/P_{\text{mid}}$; with a fixed one-tick spread this collapsed to a monotone proxy of the price level, so float32 rounding leaked regime identity and was removed cleanly.
+The spread enters as an integer number of ticks. An earlier version used relative spread $`S / P_{\mathrm{mid}}`$; with a fixed one-tick spread this collapsed to a monotone proxy of the price level, so float32 rounding leaked regime identity and was removed cleanly.
 
 ### 6. Normalization
-- **Decimal precision normalization** for `LSTM` and `DeepLOB`: $(P - P_0)/P_0$ and $\log(1 + V/V_0)$ fitted on training snapshots.
+- **Decimal precision normalization** for `LSTM` and `DeepLOB`: $`(P - P_0)/P_0`$ and $`\log(1 + V/V_0)`$ fitted on training snapshots.
 - **Bilinear Normalization (`BiN`)** (**Tran et al., 2021**) inside **`TLOB`** ([`normalizers.py`](src/data/normalizers.py)), protecting attention weights during strong regime shifts such as `NIFTY_FUT` Segment 3's `+10.7%` rally.
 
 ### 7. Multi-Scale Flow, Realized Volatility & Intraday Seasonality (`LightGBM v2`, `38` Features)
 Diagnostic error analysis exposed a 5-second lookback blind spot and a `15:15–15:30 IST` closing-stall artifact where static bid walls fooled `v1` (`53.4%` accuracy). Adding `13` strictly causal features fixes both (`+5.20 pp` F1 across `25/25` NSE instruments):
 - **Multi-scale flow & signed drift (`9`):** `mid_drift_{5,15,30,60}s_ticks`, `ofi_mean_{10,30,60}s`, `imb1_mean_20s`, `imb1_vel_20s = imb_l1 - imb1_mean_20s`.
-- **Volatility & spread (`3`):** `vol_{10,30}s_ticks` (trailing mean $|\Delta m_{1s}|/\text{tick}$), `spread_mean_20s`.
+- **Volatility & spread (`3`):** `vol_{10,30}s_ticks` (trailing mean $`|\Delta m_{1s}|/\mathrm{tick}`$), `spread_mean_20s`.
 - **Session clock (`1`):** `day_progress = pos_in_day / 22500.0` (`09:15 → 15:30 IST`, raising late-day stall accuracy on `RELIANCE` from `53.4% → 84.8%`).
 
 ### 8. Cross-Market Companion Futures Features (`+SSF / +Companion`, `46` Features)
@@ -180,9 +200,13 @@ For any equity with a Single-Stock Futures book (or index futures paired with a 
 - `ssf_ret_1s_bp`, `ssf_ret_5s_bp`, `lead_5s_bp = ssf_ret_5s - cash_ret_5s`, `lead_15s_bp = ssf_ret_15s - cash_ret_15s`.
 
 ### 9. The Accuracy–Latency–Cost Break-Even Law
-For a directional signal $s = \pm 1$ held over horizon $h$ with average absolute move $m$, inference/wire latency $L$, and round-trip friction $C = c_{\text{cross}} + 2f$:
-$$\text{net edge} = E[s \cdot \Delta m_{t\to t+h}] - \text{latency decay}(L) - C, \qquad p^* = \frac{1}{2} + \frac{C}{2m}.$$
-When round-trip crossing + statutory costs $C$ exceed typical horizon move $m$ ($p^* > 100\%$), **no directional classifier can win as a standalone taker**, shifting the winning deployment to passive/opportunistic execution (`LOB-Hybrid 2.0`).
+For a directional signal $`s = \pm 1`$ held over horizon $`h`$ with average absolute move $`m`$, inference/wire latency $`L`$, and round-trip friction $`C = c_{\mathrm{cross}} + 2f`$:
+
+$$
+\mathrm{net\ edge} = E\bigl[s \cdot \Delta m_{t \to t+h}\bigr] - \mathrm{latency\ decay}(L) - C, \qquad p^* = \frac{1}{2} + \frac{C}{2m}
+$$
+
+When round-trip crossing + statutory costs $`C`$ exceed typical horizon move $`m`$ ($`p^* > 100\%`$), **no directional classifier can win as a standalone taker**, shifting the winning deployment to passive/opportunistic execution (`LOB-Hybrid 2.0`).
 
 ---
 
@@ -265,9 +289,9 @@ The spread is always one tick in this regime, so Model A carries no information.
 
 ### Experiment D: Execution and Latency
 
-The test-set signals of the trained LightGBM and DeepLOB models from Experiment A are executed over each seed's test window (8,980 events, about 89 s of simulated trading). Settings: $1M capital, 100-share lots, ±500 share inventory cap, 1.5 bp taker fee, 0.5 bp maker rebate, and 1 ms latency unless stated. Latency is applied in wall-clock time: an order reaches the book at the first snapshot whose timestamp is at least $t$ + latency. If an order is larger than the visible depth, by default the simulator extends the book past its last level, using the visible book's average level spacing and level size. It can also be set to fill partially or to reject the order, and it counts how often any of this happens (`overflow_policy` in [simulator.py](src/execution/simulator.py)).
+The test-set signals of the trained LightGBM and DeepLOB models from Experiment A are executed over each seed's test window (8,980 events, about 89 s of simulated trading). Settings: \$1M capital, 100-share lots, ±500 share inventory cap, 1.5 bp taker fee, 0.5 bp maker rebate, and 1 ms latency unless stated. Latency is applied in wall-clock time: an order reaches the book at the first snapshot whose timestamp is at least $`t`$ + latency. If an order is larger than the visible depth, by default the simulator extends the book past its last level, using the visible book's average level spacing and level size. It can also be set to fill partially or to reject the order, and it counts how often any of this happens (`overflow_policy` in [simulator.py](src/execution/simulator.py)).
 
-| Model | Regime | Net PnL ($) | Trades | PnL / trade ($) | Fees ($) | Slippage vs decision mid ($) |
+| Model | Regime | Net PnL (\$) | Trades | PnL / trade (\$) | Fees (\$) | Slippage vs decision mid (\$) |
 |:---|:---|:---:|:---:|:---:|:---:|:---:|
 | LightGBM | Academic mid-price (fantasy) | 1,858 ± 136 | 658 | 2.86 | 0 | 0 |
 | LightGBM | Aggressive taker | **457 ± 257** | 658 | 0.74 | 982 | 422 |
@@ -293,11 +317,11 @@ The test-set signals of the trained LightGBM and DeepLOB models from Experiment 
 
 **Measured single-sample inference latency** (median, Python): LightGBM booster **0.14 ms** (CPU), DeepLOB **2.4 ms** (CUDA, batch of 1).
 
-Interpretation: both models lose about the same amount per millisecond of latency (≈$390–400 from 0 to 100 ms). LightGBM's advantage over DeepLOB is already present at zero latency, so it comes from better signals, not faster inference. At the measured latencies, DeepLOB's extra ~2.3 ms costs about $10 (≈$109 at 0.14 ms vs ≈$99 at 2.4 ms), which is small next to the ~$350 signal-quality gap. The drop from 0 to 0.05 ms for both models is a discretization effect: at zero latency the order fills against the very snapshot the decision was made on, while any positive latency means the next event. In seed 0 DeepLOB edges out LightGBM. The seed-to-seed spread in PnL is large compared with the means, so treat the absolute numbers as indicative.
+Interpretation: both models lose about the same amount per millisecond of latency (≈\$390–400 from 0 to 100 ms). LightGBM's advantage over DeepLOB is already present at zero latency, so it comes from better signals, not faster inference. At the measured latencies, DeepLOB's extra ~2.3 ms costs about \$10 (≈\$109 at 0.14 ms vs ≈\$99 at 2.4 ms), which is small next to the ~\$350 signal-quality gap. The drop from 0 to 0.05 ms for both models is a discretization effect: at zero latency the order fills against the very snapshot the decision was made on, while any positive latency means the next event. In seed 0 DeepLOB edges out LightGBM. The seed-to-seed spread in PnL is large compared with the means, so treat the absolute numbers as indicative.
 
 ![Experiment D Equity](artifacts/experiment_d_equity_curves.png)
 
-*Equity curves for LightGBM's signals on seed 0 (fantasy +$1,727, aggressive taker +$188, passive maker −$27 on 5 fills). Regenerate with `scripts/plot_exp_d_equity.py`.*
+*Equity curves for LightGBM's signals on seed 0 (fantasy +\$1,727, aggressive taker +\$188, passive maker −\$27 on 5 fills). Regenerate with `scripts/plot_exp_d_equity.py`.*
 
 ![Experiment D Latency](artifacts/experiment_d_latency_vs_profit.png)
 
@@ -423,7 +447,7 @@ The top of the book carries most of the signal. Lags add +0.024, and everything 
 
 **Execution** (test-set signals, 0.1 BTC lots, ±0.5 BTC cap, 4 bp taker fee, 0 bp maker fee, 1 s latency)
 
-| Model | Regime | Net PnL ($) | Trades | Fees ($) |
+| Model | Regime | Net PnL (\$) | Trades | Fees (\$) |
 |:---|:---|:---:|:---:|:---:|
 | LightGBM | Academic mid-price (fantasy) | 8,055 ± 988 | 15,595 | 0 |
 | LightGBM | Aggressive taker | −36,394 ± 7,271 | 15,595 | 37,631 |
@@ -432,9 +456,9 @@ The top of the book carries most of the signal. Lags add +0.024, and everything 
 | DeepLOB | Aggressive taker | −31,071 ± 10,144 | 13,337 | 31,809 |
 | DeepLOB | Passive maker (VPIN gate) | −1,411 ± 253 | 896 | 0 |
 
-- Fees alone are about 4.7× the fantasy profit. Both models lose about $2.3 per taker trade. DeepLOB loses less in total only because it trades less.
+- Fees alone are about 4.7× the fantasy profit. Both models lose about \$2.3 per taker trade. DeepLOB loses less in total only because it trades less.
 - Passive orders only fill when the price trades through them, which by construction is when the market moves against the order. Under this rule, so few orders fill that the strategy loses a little.
-- **Latency barely matters here.** Raising the latency from 0 to 30 s moves LightGBM from −$34.5k to −$41.0k and DeepLOB from −$30.0k to −$34.8k, which is small next to the fees. Median single-sample inference takes 0.14 ms for LightGBM (CPU) and 5.7 ms for DeepLOB (CUDA). Both are far below the 1 s snapshot interval.
+- **Latency barely matters here.** Raising the latency from 0 to 30 s moves LightGBM from −\$34.5k to −\$41.0k and DeepLOB from −\$30.0k to −\$34.8k, which is small next to the fees. Median single-sample inference takes 0.14 ms for LightGBM (CPU) and 5.7 ms for DeepLOB (CUDA). Both are far below the 1 s snapshot interval.
 
 ![BTC fantasy vs real PnL](artifacts/figures_real/btc_fantasy_vs_real_pnl.png)
 
@@ -509,15 +533,15 @@ One-second snapshots cannot show queue position, so each strategy runs under thr
 
 | Strategy | Pessimistic | Queue | Optimistic | Segments > 0 |
 |:---|:---:|:---:|:---:|:---:|
-| always | −$4,677 ± 57 | −$4,638 ± 68 | −$4,509 ± 115 | 0/4 under every rule |
-| rule (spec Scenario A/B) | −$1,562 ± 1,033 | −$1,562 ± 1,019 | −$1,445 ± 1,103 | 0/4 |
-| model | −$670 ± 778 | −$501 ± 818 | +$81 ± 718 | 0, 1 and 2 of 4 |
+| always | −\$4,677 ± 57 | −\$4,638 ± 68 | −\$4,509 ± 115 | 0/4 under every rule |
+| rule (spec Scenario A/B) | −\$1,562 ± 1,033 | −\$1,562 ± 1,019 | −\$1,445 ± 1,103 | 0/4 |
+| model | −\$670 ± 778 | −\$501 ± 818 | +\$81 ± 718 | 0, 1 and 2 of 4 |
 
-- **Naive quoting loses about $10,400 per day.** The average fill loses 1.7–1.9 bp 30 s later under the pessimistic and queue rules, and 0.6–0.8 bp even at the front of the queue.
+- **Naive quoting loses about \$10,400 per day.** The average fill loses 1.7–1.9 bp 30 s later under the pessimistic and queue rules, and 0.6–0.8 bp even at the front of the queue.
 - **The spec's rule cuts losses by about two thirds; the model by 86% or more,** but the model only breaks even under the optimistic rule, and that result is indistinguishable from zero.
 - **Adverse selection is only weakly predictable.** Given a fill, a LightGBM classifier tells toxic fills (negative markout) from good ones with an AUC of 0.55–0.58.
 - **VPIN does not sort fills.** Markouts by VPIN tercile show no consistent pattern; low-VPIN bid fills are the worst (−2.25 bp under the pessimistic rule).
-- **Why it fails:** BTC trades in $0.01 steps at about $60,000, so the spread is 0.0017 bp and sits at one tick 80% of the time. A typical one-second move is 0.5 bp. There is no spread to earn, only adverse selection to absorb. This is spec section 1's small-tick case, measured.
+- **Why it fails:** BTC trades in \$0.01 steps at about \$60,000, so the spread is 0.0017 bp and sits at one tick 80% of the time. A typical one-second move is 0.5 bp. There is no spread to earn, only adverse selection to absorb. This is spec section 1's small-tick case, measured.
 - The Coinbase per-level market-order columns add up to only about 30–40% of the traded volume, so the queue rule here behaves almost like the pessimistic one. The fill rules are bounds, not estimates.
 
 ### LOBSTER: Nasdaq event data, large- vs small-tick stocks (Experiment I)
