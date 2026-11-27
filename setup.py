@@ -5,6 +5,7 @@ setup(
     version="0.1.0",
     description="High-Frequency Limit Order Book Prediction: Microstructure Signals, Deep Learning & Execution Systems",
     author="Aarav Singhal",
+    license="Proprietary - All Rights Reserved (No Publication Without Author Consent)",
     packages=find_packages(),
     python_requires=">=3.10",
     install_requires=[

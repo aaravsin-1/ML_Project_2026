@@ -5,6 +5,7 @@
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](setup.py)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.6.0%20CUDA-orange.svg)](src/models/)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20%20SIMD-darkblue.svg)](cpp/)
+[![License: All Rights Reserved](https://img.shields.io/badge/license-All%20Rights%20Reserved%20(No%20Unauthorized%20Publication)-crimson.svg)](LICENSE)
 
 A research framework for short-horizon price prediction from Limit Order Book (LOB) data and for testing whether predictions survive realistic execution. It covers microstructure features (OFI, multi-level OFI, VPIN, micro-price), a model hierarchy from naive baselines to DeepLOB and TLOB, an execution simulator with spread crossing, book walking, fees, latency and passive fills, and a C++20 inference-latency benchmark..
 
@@ -761,3 +762,11 @@ The model, feature and extension tests need PyTorch. The simulator and validatio
 5. **López de Prado, M. (2018).** *Advances in Financial Machine Learning.* Wiley.
 6. **Tran, D. T., Kanniainen, J., Gabbouj, M., & Iosifidis, A. (2021).** *Data Normalization for Bilinear Structures in High-Frequency Financial Time-Series.* ICPR 2020.
 7. **Gould, M. D., Porter, M. A., Williams, S., McDonald, M., Fenn, D. J., & Howison, S. D. (2013).** *Limit Order Books.* Quantitative Finance, 13(11), 1709–1742. [PDF](https://www.math.ucla.edu/~mason/papers/gould-qf-final.pdf)
+
+---
+
+## License
+
+Copyright (c) 2026 **Aarav Singhal**. **All Rights Reserved.**
+
+No part of this repository — including source code, model architectures/weights, feature definitions, empirical findings, tables, figures, notebooks, reports, or web application bundles — may be published, submitted to any journal, conference, workshop, or preprint server, redistributed, modified for external distribution, or used commercially **without the prior express written consent of Aarav Singhal**. Course instructors and examiners may inspect and execute the code solely for academic grading and reproducibility verification. See [LICENSE](LICENSE) for full terms.

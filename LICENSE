@@ -1,0 +1,61 @@
+PROPRIETARY LICENSE — ALL RIGHTS RESERVED
+NO PUBLICATION OR REDISTRIBUTION WITHOUT PRIOR WRITTEN CONSENT
+
+Copyright (c) 2026 Aarav Singhal
+All Rights Reserved.
+
+This repository ("Work") — including all source code, algorithms, model
+architectures, trained model parameters/weights, feature definitions,
+experimental pipelines, simulation engines, datasets/bundles, empirical
+findings, verification tables, figures, notebooks, documentation, reports,
+presentation materials, and web application interfaces — is the exclusive
+intellectual property of Aarav Singhal ("Author").
+
+1. RESERVATION OF RIGHTS
+No open-source license (such as MIT, Apache, BSD, or GPL) is granted. All
+rights under applicable copyright and intellectual property laws not
+expressly granted in writing by the Author are strictly reserved.
+
+2. STRICT PROHIBITION ON PUBLICATION AND ACADEMIC/PUBLIC DISSEMINATION
+No person, institution, or entity may publish, submit, upload, broadcast,
+incorporate, or present any portion of this Work — or any findings,
+experimental results, tables, figures, methodologies, or derivative works
+based upon this Work — in any academic paper, journal article, conference
+or workshop proceedings, thesis, dissertation, preprint server (including
+but not limited to arXiv, SSRN, or ResearchGate), technical report, blog
+post, whitepaper, or public/commercial presentation WITHOUT THE PRIOR
+EXPRESS WRITTEN CONSENT OF AARAV SINGHAL.
+
+3. PROHIBITION ON REDISTRIBUTION, MODIFICATION, AND COMMERCIAL USE
+Without prior express written authorization from the Author, you may NOT:
+  (a) copy, reproduce, mirror, fork for external distribution, or
+      redistribute this Work or any subset of it in source or binary form;
+  (b) modify, adapt, translate, or create derivative works from any part of
+      this Work for distribution or publication;
+  (c) sell, license, sublicense, monetize, or deploy any part of this Work
+      (including models, features, or software) in commercial, proprietary,
+      institutional, or live trading systems.
+
+4. LIMITED INSPECTION AND ACADEMIC EVALUATION PERMISSION
+Course instructors, teaching assistants, examiners, and explicitly invited
+academic reviewers are granted a limited, non-exclusive, non-transferable,
+revocable permission solely to view, clone locally, and execute the code in
+this repository for the strict purpose of grading, course evaluation, and
+reproducibility verification of the Author's project submission. Where this
+repository is hosted on GitHub, standard GitHub Terms of Service apply
+strictly to on-platform viewing; such hosting does not grant any right to
+publish, redistribute, or create derivative works.
+
+5. REQUESTING WRITTEN CONSENT
+To request written permission for academic collaboration, citation/publication,
+licensing, or any other use beyond Section 4, contact the Author directly
+and obtain signed or explicitly documented written consent before any use,
+submission, or publication.
+
+6. DISCLAIMER OF WARRANTY, LIABILITY, AND FINANCIAL ADVICE
+THIS WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, TRADING LOSSES, OR OTHER
+LIABILITY ARISING FROM THE WORK. NOTHING IN THIS REPOSITORY CONSTITUTES
+INVESTMENT, FINANCIAL, LEGAL, OR TRADING ADVICE.

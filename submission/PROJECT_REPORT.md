@@ -4,6 +4,7 @@
 **Author:** Aarav Singhal
 **Date:** October 2026
 **Code:** this repository (`README.md` has the full results; this report is the summary and the argument)
+**License:** Copyright © 2026 Aarav Singhal. All Rights Reserved — no publication, redistribution, or derivative use without prior written consent (see [`LICENSE`](../LICENSE)).
 
 ---
 
